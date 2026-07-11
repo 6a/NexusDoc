@@ -4,6 +4,7 @@
 
 **Started:** 2026-07-11
 **Last session:** 2026-07-11
+**Last commit:** `d5770fa` — "Sets up basic project layout and development environment"
 
 ---
 
@@ -16,13 +17,15 @@
 | 1.2.1 | `.python-version` | ✅ Done | Pinned to `3.13` (best mix of speed + wheel support) |
 | 1.3 | `uv venv` + deps | ✅ Done | Python 3.13.6, all deps installed |
 | 1.4a | `.env.example` | ✅ Done | Created, committed |
-| 1.4b | `.env` | ⚠️ Pending | File exists but Groq API key needs to be filled in |
+| 1.4b | `.env` | ✅ Done | Groq API key filled in during session |
 | 1.5 | `.pre-commit-config.yaml` | ✅ Done | Created, `pre-commit install` ran |
 | 1.6 | Directory structure | ✅ Done | `app/core/providers/`, `tests/`, `scripts/`, `data/sample_docs/` |
-| — | `ruff check .` | ✅ Passes | No issues |
-| — | `mypy app/` | ✅ Passes | No issues (empty packages) |
+| — | `ruff check .` | ✅ Passes | |
+| — | `mypy app/` | ✅ Passes | |
+| — | `pyright .` | ✅ Passes | Via `cmd /c pyright .` (shazam hook fixed) |
+| — | Committed | ✅ Done | `d5770fa` — 20 files, all hooks green |
 
-**Step 1 blocker:** `.env` needs `GROQ_API_KEY` filled in before Step 2 tests can run.
+**Step 1 complete.**
 
 ---
 
