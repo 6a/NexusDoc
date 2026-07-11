@@ -1,30 +1,32 @@
-# Week 1 — Foundation Walkthrough
+# Phase 1 — Foundation Walkthrough
 
-> **Role:** Mentor-led tutorial for a system/tool programmer pivoting into AI deployment engineering.
-> **Estimated total time:** ~6 hours (six 1-hour sessions)
-> **Prerequisite reading:** `DESIGN.md` (the NexusDoc architecture doc)
-> **Outcome:** A working RAG pipeline with provider-agnostic model calls, self-hosted observability, and end-to-end tracing — all running on free tiers.
+> **Role:** Senior-dev-led tutorial for a system/tool programmer pivoting into AI deployment engineering.
+> **Estimated total time:** ~4 hours (four sessions, roughly 30 / 75 / 45 / 75 minutes)
+> **Prerequisite reading:** `DESIGN.md` (the NexusDoc architecture doc — read the "Architecture", "Model Serving Layer", and "Phase 1" sections at minimum)
+> **Outcome:** A working RAG pipeline with provider-agnostic model calls, self-hosted observability, and end-to-end tracing — all running on free tiers. Every line written here becomes the foundation for the remaining 11 phases.
+>
+> **📋 Progress tracking:** See [`01-foundation-walkthrough-progress.md`](01-foundation-walkthrough-progress.md) — check that file before resuming a session. Update it as you complete each checkpoint.
 
 ---
 
 ## Before We Start — What You're Actually Building
 
-By the end of this week, you will have:
+By the end of Phase 1 you will have:
 
 ```
 ┌─────────────────────────────────────────────────┐
 │              Your Code (app/core/)              │
 │  ┌───────────────────────────────────────────┐  │
 │  │         Model Registry                    │  │
-│  │  Groq ── OpenRouter ── Ollama (local)    │  │
+│  │  Groq ── OpenRouter ── Ollama (local)     │  │
 │  │  env-switchable, one interface            │  │
 │  └───────────────┬───────────────────────────┘  │
-│                  │                               │
+│                  │                              │
 │  ┌───────────────▼───────────────────────────┐  │
 │  │         Hello-World RAG                   │  │
 │  │  Embed doc → Vector store → Query → Answer│  │
 │  └───────────────┬───────────────────────────┘  │
-│                  │                               │
+│                  │                              │
 │  ┌───────────────▼───────────────────────────┐  │
 │  │         LangFuse (Docker)                 │  │
 │  │  Every call traced: latency, tokens, cost │  │
@@ -32,76 +34,97 @@ By the end of this week, you will have:
 └─────────────────────────────────────────────────┘
 ```
 
-**This is not a toy.** Every line you write this week becomes the foundation of the entire 12-week project. The model registry you build in Step 2 will route every LLM call for the next 11 weeks. The LangFuse instrumentation you add in Step 6 will trace every agent decision you build in Week 5. Take your time here — weeks 2-12 are dramatically easier if Week 1 is solid.
+**This is not a toy.** The model registry you build in Step 2 routes every LLM call for the next 11 phases. The LangFuse instrumentation you add in Step 4 traces every agent decision you build in Phase 4. The `@observe` decorator pattern you learn here will wrap every retrieval, rerank, and guardrail step you build later. Take your time — Phases 2-12 are dramatically easier if Phase 1 is solid.
+
+**Where your existing knowledge helps:** You've integrated AI APIs before, so Step 2's "talk to Groq" part will feel familiar. Where it gets new is the **abstraction pattern** (the registry), **RAG end-to-end** (you haven't built one), and **observability** (entirely new to you). Those three are where you'll spend the most brain cycles.
 
 ---
 
 ## Concepts — What You Need to Know Before Coding
 
-*If you already understand LLMs, RAG, and observability, skip to Step 1. Otherwise, read this once — it grounds every decision in the plan.*
+*Read this once — it grounds every decision in Phase 1. If a concept is already familiar, skim it; the parts about RAG and observability are the ones that are likely new to you.*
 
-### What is an LLM (and why does a "provider" matter)?
+### 1. The provider-agnostic model registry (the architectural centerpiece)
 
-An **LLM (Large Language Model)** is a neural network trained on vast amounts of text. You send it a prompt (text), it returns a completion (more text). That's it. The magic is that the completion can be an answer, code, JSON, a translation — whatever the prompt asks for.
-
-A **provider** is the company or service that runs the model and exposes an API. Think of it like a database driver: PostgreSQL is the thing that stores data, but you talk to it through `psycopg2`, `pg`, or `sqlx`. Same idea here:
+A **provider** is the service that runs the model and exposes an API. Think of it like a database driver: PostgreSQL is the thing that stores data, but you talk to it through `psycopg2` or `sqlx`. Same idea here:
 
 | Provider | What it is | Why we use it |
 | ---------- | ----------- | --------------- |
-| **Groq** | LPU-based inference (not GPU — custom chips). Extremely fast, generous free tier. | Primary provider. Free, fast. |
+| **Groq** | LPU-based inference (custom chips, not GPUs). Extremely fast, generous free tier. | Primary provider. Free, fast. |
 | **OpenRouter** | Aggregator. Routes your request to whichever backend has capacity. | Fallback when Groq rate-limits us. |
 | **Ollama** | Runs models locally on your machine. No network, no API key, no cost. | Offline dev, privacy-sensitive data, zero cost. |
-| **vLLM (Week 7)** | Production-grade self-hosted model server. You deploy and own the model. | The "deployment engineer" story. |
+| **vLLM (Phase 7)** | Production-grade model server. You benchmark it on Colab's free T4 and serve the live demo via Ollama — zero GPU rental cost. | The "deployment engineer" story — later. |
 
-The key insight: **all of these speak the same API format** (OpenAI-compatible chat completions). Your job this week is to build a thin adapter layer so you can switch providers by changing one environment variable. This is not over-engineering — it's the difference between "I built an app that calls Groq" and "I built an app that routes to any OpenAI-compatible provider." The latter is what AI deployment engineers do.
+The key insight: **all of these speak the same API format** (OpenAI-compatible chat completions). Your job in Step 2 is to build a thin adapter layer so you can switch providers by changing one environment variable. This is not over-engineering — it's the difference between "I built an app that calls Groq" and "I built an app that routes to any OpenAI-compatible provider." The latter is what AI deployment engineers do, and it's what lets you drop in a self-hosted vLLM endpoint in Phase 7 without rewriting your codebase.
 
-### What is RAG?
+**The pattern:** an abstract `BaseProvider` class defines `chat()` and `list_models()`. Each concrete provider (`GroqProvider`, `OpenRouterProvider`, `OllamaProvider`) implements it. A `get_provider()` factory reads the `DEFAULT_PROVIDER` env var and returns the right one. Downstream code only ever imports `BaseProvider` — it never knows which concrete provider is behind it.
+
+If you've done graphics programming, this is exactly the Direct3D/Vulkan/Metal abstraction: you define `draw_triangle()`, each backend implements it, the engine doesn't care which is active. Same mental model.
+
+### 2. What is RAG? (you haven't built one before)
 
 **RAG = Retrieval Augmented Generation.** It solves the fundamental problem that LLMs don't know about *your* data.
 
 Without RAG:
 
 ```
-User: "What was Apple's revenue in Q3 2025?"
-LLM: "I don't have access to that information. My training data cuts off at..."
+User: "What does RFC 9110 say about the 308 status code?"
+LLM: "I don't have access to that document. My training data cuts off at..."
 ```
 
 With RAG:
 
 ```
-User: "What was Apple's revenue in Q3 2025?"
+User: "What does RFC 9110 say about the 308 status code?"
       ↓
 1. RETRIEVE: Search your vector database for relevant document chunks
-      ↓  (finds: "Apple Q3 2025 10-Q: Revenue was $94.9 billion...")
+      ↓  (finds: "308 Permanent Redirect: The target resource has been
+      ↓   assigned a new permanent URI...")
 2. AUGMENT: Glue the retrieved text into the prompt
       ↓  (prompt: "Based on the following document, answer the question...")
 3. GENERATE: LLM reads the context and answers
       ↓
-LLM: "Apple's Q3 2025 revenue was $94.9 billion, up 5% year-over-year. [Source: page 32]"
+LLM: "RFC 9110 defines 308 Permanent Redirect. The target resource has
+     been assigned a new permanent URI... [Source: §15.4.4, page 47]"
 ```
 
 The "retrieve" step uses a **vector database** — it stores chunks of text as mathematical vectors (arrays of floats). When you ask a question, it finds chunks whose vectors are "close" to your question's vector. "Close" means semantically similar, not keyword-similar. This is why it can find "revenue" when you ask about "top line income."
 
-For Week 1, you'll do a minimal version: one document, in-memory vectors (no pgvector yet), just to prove the pipeline works end-to-end.
+**An embedding** converts text into a vector. Think of it as a coordinate in "meaning space":
 
-### What is observability (and why LangFuse)?
+```
+"cat"        → [0.12, -0.34, 0.87, ...]
+"kitten"     → [0.11, -0.32, 0.85, ...]  ← close to "cat"
+"dog"        → [0.45, 0.21, -0.12, ...]   ← somewhat close
+"democracy"  → [-0.89, 0.56, 0.03, ...]   ← far from "cat"
+```
+
+For Phase 1, you'll do a minimal version: one document, **in-memory** vectors (no pgvector yet — that's Phase 2), just to prove the pipeline works end-to-end. You'll use `all-MiniLM-L6-v2` (80 MB, runs on CPU) in Phase 1 and upgrade to `bge-m3` (the production model in the design) in Phase 3.
+
+### 3. What is observability, and why LangFuse? (entirely new to you)
 
 Observability = knowing what your system is doing without `print()` statements.
 
-In traditional programming, you debug with a debugger. In AI systems, your "code" includes probabilistic model calls, vector searches, and multi-step agent chains. A single user request might trigger 8-15 LLM calls. You cannot `print()` your way through that.
+In traditional programming, you debug with a debugger. In AI systems, your "code" includes probabilistic model calls, vector searches, and multi-step agent chains. A single user request might trigger 8-15 LLM calls (you'll see this in Phase 4). You cannot `print()` your way through that.
 
 LangFuse gives you a **trace** — a tree of spans showing every step:
 
 ```
-User Query: "What was Apple's revenue?"
-├── [span] retrieve (237ms) — found 5 chunks from pgvector
-├── [span] rerank (89ms) — cross-encoder scored 5 chunks, kept top 3
-├── [span] llm-call (1.2s) — Groq/llama-3.3-70b, 1,247 tokens in, 89 out
+Trace: "What does RFC 9110 say about 308?"
+├── Span: retrieve (237ms) — found 5 chunks from vector store
+├── Span: rerank (89ms) — cross-encoder scored 5 chunks, kept top 3
+├── Generation: llm-call (1.2s) — Groq/llama-3.3-70b, 1247 tokens in, 89 out
 │   └── cost: $0.00012
-└── [span] guardrail-check (12ms) — PII scan passed
+└── Span: guardrail-check (12ms) — PII scan passed
 ```
 
-This is a **non-negotiable** skill for AI engineering roles. Every job listing that mentions "LLMOps" or "production AI" expects you to instrument your pipelines. We set up LangFuse in Week 1 so that every single thing you build for the next 11 weeks is automatically traced.
+- **Trace** = one end-to-end user request
+- **Span** = a unit of work (retrieval, reranking, guardrail check)
+- **Generation** = a specific LLM call (model, tokens, cost)
+
+This is a **non-negotiable** skill for AI engineering roles. Every job listing that mentions "LLMOps" or "production AI" expects you to instrument your pipelines. We set up LangFuse in Phase 1 so that every single thing you build for the next 11 phases is automatically traced. By the time you reach the eval harness in Phase 5, observability will already be wired into your muscle memory.
+
+LangFuse is self-hosted (free, open-source, MIT-licensed). We run it in a Docker container — which gives you a chance to warm up your container skills before the heavier `docker-compose` work in Phase 10.
 
 ---
 
@@ -115,7 +138,7 @@ Before you start coding, create these accounts and install these tools. All are 
 | --------- | ------------ | --------------- |
 | **Groq** | <https://console.groq.com> | Create account → API Keys → copy key |
 | **OpenRouter** | <https://openrouter.ai> | Create account → API Keys → copy key |
-| **Supabase** | <https://supabase.com> | Create account → new project → copy connection string (you won't use it until Week 2, but create it now) |
+| **Supabase** | <https://supabase.com> | Create account → new project → copy connection string (you won't use it until Phase 2, but create it now) |
 
 ### Tools to install
 
@@ -134,43 +157,42 @@ Run these and confirm they all work before moving on:
 ```bash
 uv --version          # should print uv 0.x.x
 docker --version      # should print Docker version 27.x.x or later
-ollama --version      # should print ollama version is 0.x.x
+ollama --version      # should print ollama version 0.x.x
 git --version         # should print git version 2.x.x
 
 # Pull a small model for local testing (takes ~5 min, ~4.7 GB):
 ollama pull llama3.2:3b
 ```
 
+> **Why `llama3.2:3b`?** It's small enough to run on CPU-only machines while you get the pipeline working. Phase 3 upgrades to a larger model. If you have a GPU and want a stronger local fallback now, `ollama pull qwen2.5:7b` works too — but 3b is enough for Phase 1.
+
 ---
 
-## Step 1 — Project Scaffold (~1 hour)
+## Step 1 — Project Scaffold (~30 min)
 
-**Goal:** A clean Python project with dependency management, linting, and a working `.env` system.
+**Goal:** A clean Python project with dependency management, typed config, linting, and a working `.env` system.
 
 ### What you'll learn
 
 - Modern Python project structure with `uv`
-- `pyproject.toml` as the single source of truth
-- Environment variable management for secrets
+- `pyproject.toml` as the single source of truth for deps, lint, and type config
+- Environment-variable management for secrets (Pydantic Settings)
 - Pre-commit hooks for code quality
+
+You have some exposure to Python backend tooling, so this step is intentionally brisk. If any of the tools (uv, ruff, mypy) are new to you, that's the part worth slowing down on — the rest is standard.
 
 ### 1.1 Create the project
 
 ```bash
-# Create and enter the project directory
 mkdir nexusdoc && cd nexusdoc
-
-# Initialize git
 git init
 git checkout -b main
-
-# Initialize Python project with uv
 uv init --app .
-
-# This creates a minimal pyproject.toml. Now let's flesh it out.
 ```
 
-### 1.2 Write pyproject.toml
+`uv init --app .` creates a minimal `pyproject.toml`. We'll flesh it out next.
+
+### 1.2 Write `pyproject.toml`
 
 Open `pyproject.toml` and replace the content with this:
 
@@ -183,14 +205,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "groq>=0.20.0",
-    "openai>=1.0.0",           # OpenRouter uses OpenAI-compatible API
+    "openai>=1.0.0",           # OpenRouter uses the OpenAI-compatible API
     "ollama>=0.4.0",
     "langfuse>=3.0.0",
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "numpy>=1.26.0",
-    "sentence-transformers>=3.0.0",  # local embeddings
+    "sentence-transformers>=3.0.0",  # local embeddings (Phase 1: all-MiniLM-L6-v2)
 ]
 
 [project.optional-dependencies]
@@ -225,24 +247,23 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 ```
 
-> **Why these choices:** `ruff` is a single Rust-based tool that replaces flake8 + isort + black. It runs in milliseconds. `mypy` with `strict = true` catches type errors that would be runtime crashes. Both are table stakes for production Python in 2026 — any AI engineering team expects them.
+> **Why these choices:** `ruff` is a single Rust-based tool that replaces flake8 + isort + black. It runs in milliseconds. `mypy` with `strict = true` catches type errors that would be runtime crashes. Both are table stakes for production Python in 2026 — any AI engineering team expects them. `vcrpy` records HTTP cassettes so your tests run offline (you'll use it from Phase 2 onward).
+
+> **Pitfall — `openai` for OpenRouter?** Yes. The `openai` Python SDK talks to *any* OpenAI-compatible endpoint when you set `base_url`. OpenRouter, vLLM (Phase 7), and many others expose this format. This is why the OpenAI API format became the industry standard — one client library talks to everything. You'll reuse this exact trick for vLLM later.
 
 ### 1.3 Create virtual environment and install
 
 ```bash
-# uv creates and manages the venv for you
 uv venv
-
 # Activate it (Windows PowerShell):
 .venv\Scripts\Activate.ps1
 # OR (macOS/Linux):
 source .venv/bin/activate
 
-# Install the project and dev dependencies
 uv pip install -e ".[dev]"
 ```
 
-### 1.4 Create .env.example and .env
+### 1.4 Create `.env.example` and `.env`
 
 Create `.env.example` (this goes into git — it's the template):
 
@@ -251,7 +272,7 @@ Create `.env.example` (this goes into git — it's the template):
 GROQ_API_KEY=           # from https://console.groq.com/keys
 OPENROUTER_API_KEY=     # from https://openrouter.ai/keys
 
-# Database (Week 2)
+# Database (Phase 2+)
 SUPABASE_URL=           # from https://supabase.com dashboard
 SUPABASE_SERVICE_KEY=   # from Supabase project settings
 
@@ -268,11 +289,11 @@ DEFAULT_PROVIDER=groq   # groq | openrouter | ollama
 LOG_LEVEL=INFO
 ```
 
-Create `.env` (this does NOT go into git):
+Create `.env` (this does **NOT** go into git):
 
 ```bash
 cp .env.example .env
-# Now fill in your actual API keys
+# Now fill in your real Groq and OpenRouter keys. LangFuse keys come in Step 3.
 ```
 
 > **Critical habit:** `.env` contains secrets. Add it to `.gitignore` immediately:
@@ -313,22 +334,6 @@ mkdir -p app/core app/rag tests data/sample_docs
 touch app/__init__.py app/core/__init__.py app/rag/__init__.py tests/__init__.py
 ```
 
-### 1.7 Verify everything works
-
-```bash
-# Lint check (should pass with no files to check)
-ruff check .
-
-# Type check (should pass)
-mypy app/
-
-# Run pre-commit on all files (should pass)
-pre-commit run --all-files
-
-# Verify you can import your package
-python -c "import app; print('app package works')"
-```
-
 ### Step 1 checkpoint
 
 - [ ] `uv run python -c "import groq; print('groq ok')"` works
@@ -343,34 +348,34 @@ python -c "import app; print('app package works')"
 
 ---
 
-## Step 2 — Model Registry: Design + Groq Provider (~1 hour)
+## Step 2 — Model Registry: The Provider-Agnostic Abstraction (~75 min, DEEP)
 
 **Goal:** A provider-agnostic interface. Call `registry.get_provider()` and get back an object that handles chat completions, regardless of whether the backend is Groq, OpenRouter, or Ollama.
 
 ### What you'll learn
 
 - Abstract base classes for provider abstraction (the Strategy pattern)
-- Why you want this before you write any agent code
-- How to use Pydantic Settings for configuration from environment variables
+- Why you want this *before* you write any agent code
+- Why this exact abstraction is what makes the vLLM spike (Phase 7) a 1-hour change instead of a refactor
 
-### 2.1 Why a registry?
+### 2.1 Why a registry? (the reasoning that matters)
 
-Imagine building 12 weeks of code that all calls `groq_client.chat.completions.create(...)` directly. Then Week 7 you need to benchmark against a self-hosted vLLM endpoint. You'd have to find-and-replace every `groq_client` reference. Now imagine you add a fallback: "if Groq returns a rate-limit error, try OpenRouter." Without a registry, you're adding `try/except` blocks everywhere.
+Imagine building 11 phases of code that all call `groq_client.chat.completions.create(...)` directly. Then Phase 7 you need to benchmark against a self-hosted vLLM endpoint. You'd have to find-and-replace every `groq_client` reference. Now imagine you add a fallback: "if Groq returns a rate-limit error, try OpenRouter." Without a registry, you're adding `try/except` blocks everywhere.
 
 With a registry, you change one environment variable (`DEFAULT_PROVIDER=groq` → `DEFAULT_PROVIDER=vllm`) and every call in the entire codebase automatically routes to the new provider. The fallback logic lives in one place.
 
-**This is not architecture astronautics.** It's maybe 80 lines of code and it pays off in every single week after this one.
+**This is maybe 80 lines of code and it pays off in every single phase after this one.** It is also the single most asked-about pattern in AI deployment interviews: "How do you handle provider switching, rate-limit fallback, and cost optimization?" — this is the answer.
 
 ### 2.2 The design
 
 ```
 app/core/
 ├── __init__.py
-├── config.py          # Pydantic Settings — reads from .env
-├── model_registry.py   # Provider factory + fallback logic
+├── config.py            # Pydantic Settings — reads from .env
+├── model_registry.py    # Provider factory + fallback logic
 └── providers/
     ├── __init__.py
-    ├── base.py         # Abstract base class
+    ├── base.py          # Abstract base class
     └── groq_provider.py # Groq implementation
 ```
 
@@ -406,7 +411,7 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_host: str = "http://localhost:3000"
 
-    # -- Database (Week 2+) --
+    # -- Database (Phase 2+) --
     supabase_url: str = ""
     supabase_service_key: str = ""
 
@@ -418,9 +423,11 @@ class Settings(BaseSettings):
 settings = Settings()
 ```
 
-> **Why Pydantic Settings?** It automatically reads from `.env`, validates types, and crashes early if required values are missing. No more `os.getenv("GROQ_API_KEY")` scattered across 20 files. One import, one source of truth.
+> **Why Pydantic Settings?** It automatically reads from `.env`, validates types, and crashes early if required values are missing. No more `os.getenv("GROQ_API_KEY")` scattered across 20 files. One import, one source of truth. This is the 2026 standard for typed Python config.
 
 ### 2.4 Write the abstract base provider (`app/core/providers/base.py`)
+
+First create `app/core/providers/__init__.py` (empty).
 
 ```python
 """Abstract base class for all LLM providers.
@@ -428,6 +435,9 @@ settings = Settings()
 Every provider (Groq, OpenRouter, Ollama, vLLM) implements this interface.
 The rest of the codebase only ever imports BaseProvider — it never knows
 which concrete provider is behind it.
+
+This is the Strategy pattern: define the interface once, swap implementations
+freely. Downstream code depends on the abstraction, not the concretion.
 """
 
 from abc import ABC, abstractmethod
@@ -475,7 +485,9 @@ class BaseProvider(ABC):
         ...
 ```
 
-> **Parallel to system programming:** This is exactly the same pattern as a graphics API abstraction (Direct3D vs Vulkan vs Metal). You define `draw_triangle()`, and each backend implements it. The game engine doesn't care which backend is active.
+> **Parallel to system programming:** This is exactly the same pattern as a graphics API abstraction (Direct3D vs Vulkan vs Metal). You define `draw_triangle()`, and each backend implements it. The game engine doesn't care which backend is active. Here, `chat()` is your `draw_triangle()`, and Groq/OpenRouter/Ollama/vLLM are your backends.
+
+> **Why dataclasses for the message/result types?** They give you frozen-by-default-ish value semantics, type safety, and zero boilerplate. You'll convert these to Pydantic models in Phase 3 when you need structured output — for now dataclasses keep the surface area small.
 
 ### 2.5 Write the Groq provider (`app/core/providers/groq_provider.py`)
 
@@ -484,6 +496,11 @@ class BaseProvider(ABC):
 
 Uses the official Groq Python SDK. Groq's API is OpenAI-compatible
 but we use the native SDK for proper error types and streaming support.
+
+Free tier limits (as of July 2026):
+- 30 requests per minute
+- ~1,000 requests per day
+- Models: llama-3.3-70b, llama-3.1-8b, qwen-2.5-32b, gemma2-9b
 """
 
 from groq import Groq
@@ -493,13 +510,7 @@ from app.core.providers.base import BaseProvider, ChatMessage, CompletionResult
 
 
 class GroqProvider(BaseProvider):
-    """Groq chat completion provider.
-
-    Free tier limits (as of July 2026):
-    - 30 requests per minute
-    - ~1,000 requests per day
-    - Model list: llama-3.3-70b, llama-3.1-8b, mixtral-8x7b, gemma2-9b, qwen-2.5-32b
-    """
+    """Groq chat completion provider."""
 
     def __init__(self) -> None:
         if not settings.groq_api_key:
@@ -544,11 +555,12 @@ class GroqProvider(BaseProvider):
         return [
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it",
             "qwen-2.5-32b",
+            "gemma2-9b-it",
         ]
 ```
+
+> **Pitfall — rate limits are per-request, not per-token.** Groq's free tier is ~30 RPM / ~1,000 RPD. A multi-agent run (Phase 4) is 8-15 LLM calls per document. So the *requests* ceiling bites before tokens do. This is why the caching layer (Phase 6) and the fallback provider matter so much. Keep this in mind when you build your agents later.
 
 ### 2.6 Write the model registry (`app/core/model_registry.py`)
 
@@ -576,7 +588,7 @@ def get_provider() -> BaseProvider:
       groq       → Groq (fast, free-tier-friendly)
       openrouter → OpenRouter (fallback when Groq rate-limits)
       ollama     → Local models (offline, zero cost)
-      vllm       → Self-hosted vLLM (Week 7)
+      vllm       → Self-hosted vLLM (Phase 7)
     """
     global _provider
     if _provider is not None:
@@ -586,9 +598,9 @@ def get_provider() -> BaseProvider:
     if name == "groq":
         _provider = GroqProvider()
     # elif name == "openrouter":
-    #     _provider = OpenRouterProvider()   # Step 3
+    #     _provider = OpenRouterProvider()   # Step 2.7
     # elif name == "ollama":
-    #     _provider = OllamaProvider()       # Step 3
+    #     _provider = OllamaProvider()       # Step 2.7
     else:
         raise ValueError(
             f"Unknown provider '{name}'. "
@@ -604,7 +616,7 @@ def reset_provider() -> None:
     _provider = None
 ```
 
-### 2.7 Test it
+### 2.7 Test Groq
 
 Create `tests/test_model_registry.py`:
 
@@ -612,7 +624,7 @@ Create `tests/test_model_registry.py`:
 """Tests for model registry and Groq provider.
 
 These tests require a valid GROQ_API_KEY in .env.
-They will make real API calls — we'll add VCR cassettes in Week 6
+They make real API calls — we'll add VCR cassettes in Phase 5
 to make them fully offline.
 """
 
@@ -662,7 +674,7 @@ Run the tests:
 uv run pytest tests/test_model_registry.py -v -s
 ```
 
-If you see `ping → pong` in the output, your model registry is working.
+If you see `ping → pong` in the output, your model registry works. This is the moment you stop writing "an app that calls Groq" and start writing "an app that routes to any provider."
 
 ### Step 2 checkpoint
 
@@ -672,15 +684,11 @@ If you see `ping → pong` in the output, your model registry is working.
 
 ---
 
-## Step 3 — OpenRouter + Ollama Providers (~1 hour)
+## Step 3 — Add OpenRouter + Ollama Providers (~20 min, follow the same pattern)
 
 **Goal:** Two more providers, same interface. Switch between them by changing one env var.
 
-### What you'll learn
-
-- How different providers expose the same OpenAI-compatible API
-- OpenRouter's free-tier model router
-- Running models locally with Ollama (no network, no API key, no cost)
+You've built Groq. These two are the exact same pattern with a different `__init__` and client library. This step is intentionally thin — the point is to internalize that *the abstraction is the deliverable, not the number of providers.*
 
 ### 3.1 Write the OpenRouter provider
 
@@ -755,12 +763,11 @@ class OpenRouterProvider(BaseProvider):
         return [
             "meta-llama/llama-3.3-70b-instruct",
             "google/gemma-2-9b-it",
-            "mistralai/mistral-7b-instruct",
             "qwen/qwen-2.5-7b-instruct",
         ]
 ```
 
-> **Teaching point:** Notice that `OpenRouterProvider` uses the `openai` Python package, not a special OpenRouter SDK. This is because OpenRouter exposes an OpenAI-compatible endpoint. The same `openai` package will also work with vLLM in Week 7. This is why the OpenAI API format became the industry standard — one client library talks to everything.
+> **Notice:** `OpenRouterProvider` uses the `openai` Python package, not a special OpenRouter SDK. This is because OpenRouter exposes an OpenAI-compatible endpoint. **The same `openai` package will also work with vLLM in Phase 7.** This is why you're building the abstraction now — adding vLLM later will be a ~15-line provider class with zero changes to downstream code.
 
 ### 3.2 Write the Ollama provider
 
@@ -831,7 +838,7 @@ class OllamaProvider(BaseProvider):
 
 ### 3.3 Update the registry
 
-Edit `app/core/model_registry.py` — uncomment the new providers in `get_provider()`:
+Edit `app/core/model_registry.py` — uncomment and add the new providers:
 
 ```python
 from app.core.providers.openrouter_provider import OpenRouterProvider
@@ -862,45 +869,17 @@ uv run pytest tests/test_model_registry.py -v -s
 - [ ] All three providers pass the same test
 - [ ] You can switch providers with one env var change
 - [ ] `ollama list` shows at least one pulled model
-- [ ] You ran the test with Ollama and it completed successfully (no network needed)
+- [ ] You ran the test with Ollama and it completed successfully (no network needed — Ollama is your "offline always-available" provider)
 
 ---
 
-## Step 4 — LangFuse Self-Hosted with Docker (~1 hour)
+## Step 4 — LangFuse Self-Hosted + Hello-World Traced RAG (~75 min, DEEP)
 
-**Goal:** LangFuse running locally in Docker. Every future API call traced automatically.
+**Goal:** LangFuse running in Docker. Then a minimal RAG pipeline (chunk → embed → retrieve → generate) with every step automatically traced.
 
-### What you'll learn
+This combines the two concepts that are newest to you — observability and RAG — into one step. We'll set up LangFuse first (you need API keys for the tracing code), then build the pipeline, then instrument it.
 
-- What LLM observability looks like in practice
-- Docker Compose for local infrastructure
-- LangFuse's trace → span → generation hierarchy
-
-### 4.1 What is a trace?
-
-A **trace** is a tree representing one user interaction:
-
-```
-Trace: "What was Apple's Q3 2025 revenue?"
-├── Span: retrieve
-│   ├── Generation: embedding (fastembed/bge-small-en)
-│   └── Span: vector_search (pgvector HNSW)
-├── Span: rerank
-│   └── Generation: cross-encoder (bge-reranker-v2-m3)
-└── Span: generate_answer
-    └── Generation: chat_completion (Groq/llama-3.3-70b)
-        ├── prompt_tokens: 1247
-        ├── completion_tokens: 89
-        └── cost: $0.00012
-```
-
-- **Trace** = one end-to-end user request
-- **Span** = a unit of work (retrieval, reranking, guardrail check)
-- **Generation** = a specific LLM call (model, tokens, cost)
-
-This is the mental model. LangFuse instruments it automatically when you wrap your functions.
-
-### 4.2 Create docker-compose for LangFuse
+### 4.1 LangFuse via Docker Compose
 
 Create `docker-compose.yml` in the project root:
 
@@ -908,8 +887,8 @@ Create `docker-compose.yml` in the project root:
 # LangFuse self-hosted — single-container setup for local development.
 # For production, see: https://langfuse.com/docs/deployment/self-host
 #
-# This uses the pre-built LangFuse image with embedded ClickHouse
-# (since Jan 2026). Much simpler than the old multi-container setup.
+# We use LangFuse's pre-built image. If the exact image/env changes,
+# check the self-host docs — the important thing is a running instance.
 
 services:
   langfuse:
@@ -917,16 +896,14 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Generate these with: openssl rand -hex 32
+      # Generate with: openssl rand -hex 32
       NEXTAUTH_SECRET: "${LANGFUSE_SECRET_KEY}"
       SALT: "${LANGFUSE_SECRET_KEY}"
       ENCRYPTION_KEY: "${LANGFUSE_SECRET_KEY}"
-      # Database — embedded ClickHouse+Postgres in the image
       DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
-      # Allow local connections without HTTPS
       NEXTAUTH_URL: "http://localhost:3000"
       TELEMETRY_ENABLED: "false"
-      # Initial admin user (create on first launch)
+      # Initial admin user (created on first launch)
       LANGFUSE_INIT_USER_EMAIL: "admin@nexusdoc.local"
       LANGFUSE_INIT_USER_PASSWORD: "nexusdoc-dev"
       LANGFUSE_INIT_USER_NAME: "NexusDoc Admin"
@@ -942,30 +919,21 @@ volumes:
   langfuse_data:
 ```
 
-> **Note:** The exact LangFuse self-hosted setup may change. If the above doesn't work, check <https://langfuse.com/docs/deployment/self-host> for the latest `docker-compose.yml`. The important thing is getting a running instance — the exact YAML is secondary.
-
-### 4.3 Start LangFuse
+Start it:
 
 ```bash
 docker compose up -d
-
-# Check it's running
-docker compose ps
-# Should show langfuse service as "Up"
-
-# Check logs if it fails to start
-docker compose logs langfuse
+docker compose ps    # should show langfuse as "Up"
 ```
 
-Once running, open <http://localhost:3000>. You should see the LangFuse UI.
+> **If it won't start:** run `docker compose logs langfuse` and check for port conflicts. If port 3000 is busy, change the port mapping (`"3001:3000"` and use `http://localhost:3001`).
 
-### 4.4 Get your API keys
+### 4.2 Get your LangFuse API keys
 
-1. Go to <http://localhost:3000>
+1. Open <http://localhost:3000>
 2. Sign in with `admin@nexusdoc.local` / `nexusdoc-dev`
-3. Go to Settings → API Keys
-4. Click "Create API Key"
-5. Copy the secret key and public key
+3. Go to Settings → API Keys → Create API Key
+4. Copy the **secret key** and **public key**
 
 Update your `.env`:
 
@@ -975,9 +943,9 @@ LANGFUSE_PUBLIC_KEY=pk-lf-...   # the public key you copied
 LANGFUSE_HOST=http://localhost:3000
 ```
 
-### 4.5 Verify LangFuse receives data
+### 4.3 Smoke-test LangFuse
 
-Create a quick test script `scripts/test_langfuse.py`:
+Create `scripts/test_langfuse.py`:
 
 ```python
 """Quick smoke test: send a trace to LangFuse and verify it appears."""
@@ -991,29 +959,21 @@ langfuse = Langfuse(
     host=settings.langfuse_host,
 )
 
-# Create a trace
 trace = langfuse.trace(name="smoke-test")
-
-# Add a span (unit of work)
 span = trace.span(name="test-operation")
 span.end()
 
-# Add a generation (LLM call)
 generation = trace.generation(
     name="test-llm-call",
     model="llama-3.3-70b",
     input="What is the capital of France?",
     output="Paris",
-    usage={
-        "prompt_tokens": 10,
-        "completion_tokens": 5,
-        "total_tokens": 15,
-    },
+    usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
 )
 generation.end()
 
 langfuse.flush()
-print("✅ Trace sent. Check http://localhost:3000")
+print("Sent trace. Check http://localhost:3000")
 ```
 
 Run it:
@@ -1024,43 +984,14 @@ uv run python scripts/test_langfuse.py
 
 Refresh LangFuse at <http://localhost:3000>. You should see a "smoke-test" trace with a span and a generation.
 
-### Step 4 checkpoint
+### Step 4a checkpoint
 
 - [ ] `docker compose ps` shows LangFuse running
-- [ ] <http://localhost:3000> loads the LangFuse UI
-- [ ] You created API keys and saved them in `.env`
+- [ ] <http://localhost:3000> loads
+- [ ] API keys saved in `.env`
 - [ ] The smoke-test trace appears in LangFuse
 
----
-
-## Step 5 — Hello-World RAG Pipeline (~1 hour)
-
-**Goal:** Embed a document, store its vectors, query it, and get a cited answer — all traced in LangFuse.
-
-### What you'll learn
-
-- What embeddings are and how they enable semantic search
-- Minimal RAG pipeline: chunk → embed → retrieve → generate
-- How to use sentence-transformers for local embeddings
-
-### 5.1 What are embeddings?
-
-An **embedding** converts text into a vector (a list of 768 or 1024 floats). Think of it as a coordinate in "meaning space":
-
-```
-"cat"        → [0.12, -0.34, 0.87, ...]
-"kitten"     → [0.11, -0.32, 0.85, ...]  ← close to "cat"
-"dog"        → [0.45, 0.21, -0.12, ...]   ← somewhat close
-"democracy"  → [-0.89, 0.56, 0.03, ...]   ← far from "cat"
-```
-
-The distance between two vectors represents semantic similarity. "Cat" and "kitten" are close; "cat" and "democracy" are far apart.
-
-For RAG, we embed every chunk of a document and store the vectors. When a user asks a question, we embed the question and find chunks whose vectors are closest. This is **semantic search** — it finds meaning, not keywords.
-
-We use `sentence-transformers` with the `all-MiniLM-L6-v2` model (80 MB, runs on CPU, good enough for Week 1). We'll upgrade to `bge-m3` in Week 3.
-
-### 5.2 Create a sample document
+### 4.4 Create a sample document
 
 Create `data/sample_docs/nexus_brief.txt`:
 
@@ -1068,19 +999,23 @@ Create `data/sample_docs/nexus_brief.txt`:
 NexusDoc: Multi-Agent Document Intelligence Platform
 
 OVERVIEW
-NexusDoc is an AI-powered platform that ingests complex financial and
-regulatory documents, runs a multi-agent pipeline, and produces structured
-intelligence reports.
+NexusDoc is an AI-powered platform that ingests dense document corpora
+(research papers via arXiv, specifications via IETF RFCs), runs a
+multi-agent pipeline, and produces structured intelligence reports.
 
 KEY FEATURES
-- Document understanding: Single VLM pass extracts tables, figures, and
-  layout from PDF documents.
+- Document ingestion: arXiv API + RFC rsync fetch, parsed via PyMuPDF
+  into text chunks with page and section metadata.
 - Hybrid retrieval: Combines dense vector search with sparse keyword
-  search, then reranks with a cross-encoder for accuracy.
+  search, then reranks with a cross-encoder (bge-reranker-v2-m3) for
+  accuracy. Signals production-grade RAG.
 - Multi-agent orchestration: A LangGraph supervisor routes queries to
-  specialized agents for retrieval, summarization, and risk classification.
-- Self-hosted serving: vLLM serves quantized models behind an
-  OpenAI-compatible endpoint, with benchmarked throughput and latency.
+  specialized agents for retrieval/QA and summarization/risk tagging.
+- Semantic caching: Redis + RedisVL intercepts every LLM call; repeat
+  queries are answered from cache, reducing cost and the free-tier
+  requests-per-day burden.
+- Self-hosted serving: vLLM serves a quantized 7-8B model behind an
+  OpenAI-compatible endpoint, benchmarked for TTFT and throughput.
 - Observability: Every agent step, LLM call, and retrieval is traced
   in LangFuse with cost attribution per request.
 
@@ -1092,254 +1027,32 @@ changing one environment variable. Embeddings and reranking run locally
 (pgvector on Supabase) supports hybrid search with HNSW indexing.
 
 PROBLEM STATEMENT
-Analysts and compliance teams spend significant time manually extracting
-data from documents that mix prose, tables, and figures. NexusDoc automates
-this end-to-end: document → intelligence, with citations.
+Analysts, engineers, and compliance teams spend significant time
+manually extracting information from documents that mix prose, tables,
+and structure. NexusDoc automates this end-to-end: document ->
+intelligence, with citations.
 
 TARGET METRICS
 - RAG faithfulness >90%
 - End-to-end latency <30s for a 50-page document
-- 40-50 curated eval cases with a CI eval gate
+- 15-20 curated eval cases with a CI eval gate
 ```
 
-### 5.3 Write the minimal RAG pipeline
+> **Why this document?** It's self-contained, it uses vocabulary from the project (so your RAG answers will feel grounded), and it mirrors the arXiv/RFC doc domains you'll process in later phases. You'll build real arXiv PDF ingestion in Phase 2; for now this proves the pipeline works end-to-end.
+
+### 4.5 Write the minimal RAG pipeline with tracing
 
 Create `app/rag/pipeline.py`:
 
 ```python
-"""Minimal RAG pipeline for Week 1.
+"""Minimal RAG pipeline for Phase 1 — with LangFuse tracing.
 
-This is intentionally simple — in-memory, no pgvector, no reranker.
-We'll add those in Weeks 2-3. The goal here is to prove the full
-pipeline works end-to-end with tracing.
+Intentionally simple: in-memory, no pgvector, no reranker.
+We add those in Phases 2-3. The goal here is to prove the full
+pipeline works end-to-end with tracing, so every later phase inherits
+working observability.
 """
 
-import re
-
-import numpy as np
-from sentence_transformers import SentenceTransformer
-
-from app.core.model_registry import get_provider
-from app.core.providers.base import ChatMessage
-
-
-# ---- Chunking ----
-
-def chunk_text(text: str, chunk_size: int = 300, overlap: int = 50) -> list[str]:
-    """Split text into overlapping chunks by sentence boundaries.
-
-    Simple approach for Week 1. Week 2 adds proper semantic chunking.
-    """
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
-
-    for sentence in sentences:
-        words = len(sentence.split())
-        if current_len + words > chunk_size and current:
-            chunks.append(" ".join(current))
-            # Keep last `overlap` words for context continuity
-            overlap_text = " ".join(current[-max(1, overlap // 10) :])
-            current = [overlap_text, sentence] if overlap_text else [sentence]
-            current_len = len(overlap_text.split()) + words if overlap_text else words
-        else:
-            current.append(sentence)
-            current_len += words
-
-    if current:
-        chunks.append(" ".join(current))
-
-    return chunks
-
-
-# ---- Embedding ----
-
-class Embedder:
-    """Lightweight local embedding model.
-
-    all-MiniLM-L6-v2: 80 MB, 384 dimensions, runs on CPU.
-    Good enough for Week 1. Upgrade to bge-m3 in Week 3.
-    """
-
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
-        print(f"Loading embedding model: {model_name}...")
-        self._model = SentenceTransformer(model_name)
-
-    def embed(self, texts: list[str]) -> np.ndarray:
-        """Convert a list of texts to a numpy array of vectors."""
-        return self._model.encode(texts, show_progress_bar=False)
-
-
-# ---- In-memory vector store ----
-
-class InMemoryVectorStore:
-    """Minimal vector store for Week 1. Week 2 replaces with pgvector."""
-
-    def __init__(self, embedder: Embedder) -> None:
-        self._embedder = embedder
-        self._chunks: list[str] = []
-        self._vectors: np.ndarray | None = None
-
-    def add_document(self, text: str) -> None:
-        """Chunk a document, embed all chunks, store in memory."""
-        self._chunks = chunk_text(text)
-        print(f"  Chunked into {len(self._chunks)} chunks")
-        self._vectors = self._embedder.embed(self._chunks)
-        print(f"  Embedded {len(self._chunks)} chunks ({self._vectors.shape[1]}-dim)")
-
-    def search(self, query: str, top_k: int = 3) -> list[tuple[str, float]]:
-        """Find the top-k most similar chunks to the query."""
-        if self._vectors is None:
-            return []
-
-        query_vec = self._embedder.embed([query])[0]
-
-        # Cosine similarity: dot product of normalized vectors
-        similarities = np.dot(self._vectors, query_vec) / (
-            np.linalg.norm(self._vectors, axis=1) * np.linalg.norm(query_vec)
-        )
-
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-
-        return [(self._chunks[i], float(similarities[i])) for i in top_indices]
-
-
-# ---- RAG query ----
-
-def rag_query(
-    query: str,
-    vector_store: InMemoryVectorStore,
-    top_k: int = 3,
-) -> dict:
-    """Run a single RAG query: retrieve → augment → generate.
-
-    Returns a dict with the answer, sources, and metadata.
-    """
-    # 1. Retrieve
-    results = vector_store.search(query, top_k=top_k)
-    if not results:
-        return {"answer": "No relevant documents found.", "sources": [], "usage": {}}
-
-    # 2. Augment: build a prompt with retrieved context
-    context_text = "\n\n---\n\n".join(
-        f"[Source {i + 1}]:\n{chunk}" for i, (chunk, _) in enumerate(results)
-    )
-
-    system_prompt = (
-        "You are a helpful assistant that answers questions based on the "
-        "provided document context. If the answer is not in the context, "
-        "say so. Always cite which source(s) you used."
-    )
-
-    user_prompt = (
-        f"Document context:\n\n{context_text}\n\n"
-        f"Question: {query}\n\n"
-        f"Answer the question based on the context above. Cite sources by number."
-    )
-
-    # 3. Generate
-    provider = get_provider()
-    result = provider.chat(
-        messages=[
-            ChatMessage(role="system", content=system_prompt),
-            ChatMessage(role="user", content=user_prompt),
-        ],
-        temperature=0.0,
-        max_tokens=512,
-    )
-
-    return {
-        "answer": result.content,
-        "sources": [
-            {"chunk": chunk[:200] + "...", "score": round(score, 4)}
-            for chunk, score in results
-        ],
-        "usage": result.usage,
-        "model": result.model,
-        "provider": provider.provider_name,
-    }
-```
-
-### 5.4 Create a run script
-
-Create `scripts/hello_rag.py`:
-
-```python
-"""Hello-world RAG: embed one doc, ask questions, see it work."""
-import sys
-from pathlib import Path
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from app.rag.pipeline import Embedder, InMemoryVectorStore, rag_query
-
-# Load the sample document
-doc_path = Path("data/sample_docs/nexus_brief.txt")
-text = doc_path.read_text()
-
-# Build the vector store
-print("=" * 60)
-print("Building vector store...")
-embedder = Embedder()
-store = InMemoryVectorStore(embedder)
-store.add_document(text)
-print("=" * 60)
-
-# Ask questions
-questions = [
-    "What is NexusDoc?",
-    "How does the retrieval system work?",
-    "What model is used for serving?",
-    "What are the target metrics?",
-]
-
-for q in questions:
-    print(f"\n❓ {q}")
-    result = rag_query(q, store)
-    print(f"🤖 {result['answer'][:300]}")
-    print(f"   Provider: {result['provider']} | Model: {result['model']}")
-    print(f"   Tokens: {result['usage'].get('total_tokens', '?')}")
-```
-
-Run it:
-
-```bash
-uv run python scripts/hello_rag.py
-```
-
-You should see:
-
-1. The embedding model loads (~80 MB download, one-time)
-2. The document is chunked and embedded
-3. Each question retrieves relevant context and generates an answer
-
-### Step 5 checkpoint
-
-- [ ] `uv run python scripts/hello_rag.py` runs without errors
-- [ ] The answers are relevant to the questions (they cite the NexusDoc document)
-- [ ] You understand: chunk → embed → search → prompt → generate
-- [ ] You can change `DEFAULT_PROVIDER` and re-run to see different models answer
-
----
-
-## Step 6 — Wire Tracing + End-to-End Verification (~1 hour)
-
-**Goal:** Every RAG step traced in LangFuse. Full observability from day one.
-
-### What you'll learn
-
-- Instrumenting Python code with LangFuse decorators
-- Trace hierarchy: trace → span → generation
-- Verifying traces in the LangFuse UI
-
-### 6.1 Instrument the RAG pipeline
-
-Update `app/rag/pipeline.py` — add LangFuse tracing:
-
-```python
-"""Minimal RAG pipeline for Week 1 — with LangFuse tracing."""
 import re
 import uuid
 
@@ -1352,13 +1065,13 @@ from app.core.config import settings
 from app.core.model_registry import get_provider
 from app.core.providers.base import ChatMessage
 
-# ---- LangFuse client ----
+
+# ---- LangFuse client (lazy singleton) ----
 
 _langfuse: Langfuse | None = None
 
 
 def get_langfuse() -> Langfuse:
-    """Lazy-initialize LangFuse client."""
     global _langfuse
     if _langfuse is None:
         _langfuse = Langfuse(
@@ -1369,10 +1082,14 @@ def get_langfuse() -> Langfuse:
     return _langfuse
 
 
-# ---- Chunking (same as Step 5) ----
+# ---- Chunking ----
 
 def chunk_text(text: str, chunk_size: int = 300, overlap: int = 50) -> list[str]:
-    """Split text into overlapping chunks."""
+    """Split text into overlapping chunks by sentence boundaries.
+
+    Simple approach for Phase 1. Phase 2 adds proper semantic chunking
+    with page/section metadata.
+    """
     sentences = re.split(r"(?<=[.!?])\s+", text)
     chunks: list[str] = []
     current: list[str] = []
@@ -1394,9 +1111,15 @@ def chunk_text(text: str, chunk_size: int = 300, overlap: int = 50) -> list[str]
     return chunks
 
 
-# ---- Embedding (same as Step 5) ----
+# ---- Embedding ----
 
 class Embedder:
+    """Lightweight local embedding model.
+
+    all-MiniLM-L6-v2: 80 MB, 384 dimensions, runs on CPU.
+    Good enough for Phase 1. Upgrade to bge-m3 (1024-dim) in Phase 3.
+    """
+
     def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
         print(f"Loading embedding model: {model_name}...")
         self._model = SentenceTransformer(model_name)
@@ -1408,6 +1131,8 @@ class Embedder:
 # ---- In-memory vector store ----
 
 class InMemoryVectorStore:
+    """Minimal vector store for Phase 1. Phase 2 replaces with pgvector."""
+
     def __init__(self, embedder: Embedder) -> None:
         self._embedder = embedder
         self._chunks: list[str] = []
@@ -1423,7 +1148,7 @@ class InMemoryVectorStore:
 
     @observe(name="vector_search")
     def search(self, query: str, top_k: int = 3) -> list[tuple[str, float]]:
-        """Find the top-k most similar chunks."""
+        """Find the top-k most similar chunks to the query."""
         if self._vectors is None:
             return []
 
@@ -1433,7 +1158,6 @@ class InMemoryVectorStore:
         )
         top_indices = np.argsort(similarities)[::-1][:top_k]
 
-        # Log to LangFuse
         langfuse_context.update_current_observation(
             input=query,
             output={"top_chunks": [(self._chunks[i][:100], float(similarities[i])) for i in top_indices]},
@@ -1454,18 +1178,18 @@ def rag_query(query: str, vector_store: InMemoryVectorStore, top_k: int = 3) -> 
     trace_id = str(uuid.uuid4())
     langfuse_context.update_current_trace(
         name="rag-query",
-        user_id="week1-tutorial",
+        user_id="phase1-tutorial",
         session_id="hello-world",
         input=query,
     )
 
-    # 1. Retrieve (child span)
+    # 1. Retrieve (child span — automatically traced by @observe)
     results = vector_store.search(query, top_k=top_k)
     if not results:
         langfuse_context.update_current_observation(output="No results found")
         return {"answer": "No relevant documents found.", "sources": [], "usage": {}}
 
-    # 2. Augment
+    # 2. Augment: build a prompt with retrieved context
     context_text = "\n\n---\n\n".join(
         f"[Source {i + 1}]:\n{chunk}" for i, (chunk, _) in enumerate(results)
     )
@@ -1480,7 +1204,7 @@ def rag_query(query: str, vector_store: InMemoryVectorStore, top_k: int = 3) -> 
         f"Answer the question based on the context above. Cite sources by number."
     )
 
-    # 3. Generate (child generation — automatically traced by @observe)
+    # 3. Generate
     provider = get_provider()
     result = provider.chat(
         messages=[
@@ -1491,7 +1215,7 @@ def rag_query(query: str, vector_store: InMemoryVectorStore, top_k: int = 3) -> 
         max_tokens=512,
     )
 
-    # Log the LLM generation
+    # Log the LLM generation as a LangFuse generation (model + tokens + cost)
     generation = get_langfuse().generation(
         trace_context={"trace_id": langfuse_context.get_current_trace_id()},
         name="llm_generation",
@@ -1508,13 +1232,10 @@ def rag_query(query: str, vector_store: InMemoryVectorStore, top_k: int = 3) -> 
     )
     generation.end()
 
-    # Finalize the trace
     langfuse_context.update_current_observation(
         output={"answer": result.content[:200], "sources_count": len(results)},
         metadata={"provider": provider.provider_name, "model": result.model},
     )
-
-    # Flush to LangFuse
     get_langfuse().flush()
 
     return {
@@ -1530,9 +1251,11 @@ def rag_query(query: str, vector_store: InMemoryVectorStore, top_k: int = 3) -> 
     }
 ```
 
-> **Wait — what is `@observe`?** It's a LangFuse decorator that automatically creates a span. When you call `rag_query()`, it creates a trace. When `rag_query` calls `vector_store.search()`, that creates a child span. You can also manually create traces with `get_langfuse().trace()` — we use both approaches so you see the full range of the API.
+> **What is `@observe`?** It's a LangFuse decorator that automatically creates a span when the function is called. When `rag_query()` runs, it creates a trace. When `rag_query` calls `vector_store.search()` (also decorated), that becomes a *child* span. You get the trace tree for free — no manual span arithmetic. The manual `get_langfuse().generation(...)` call logs the LLM call with its tokens/cost as a *generation* node (richer than a span). Both approaches are valid; you'll see both in LangFuse dashboards in production codebases.
 
-### 6.2 Update the run script
+> **Pitfall — `langfuse_context` only works inside an observed call.** If you call `langfuse_context.update_current_trace(...)` from a function that *isn't* decorated with `@observe`, you'll get an error or a no-op. The decorator establishes the trace context; everything called beneath it inherits it.
+
+### 4.6 Create a run script
 
 Create `scripts/hello_rag_traced.py`:
 
@@ -1577,13 +1300,12 @@ print(f"\n{'=' * 60}")
 print("✅ All queries traced. Check http://localhost:3000")
 ```
 
-### 6.3 Run and verify
+Run it:
 
 ```bash
 # Make sure LangFuse is running
 docker compose up -d
 
-# Run the traced RAG
 uv run python scripts/hello_rag_traced.py
 ```
 
@@ -1592,29 +1314,30 @@ Now go to <http://localhost:3000>. You should see:
 1. A project called "nexusdoc-dev"
 2. Inside it, traces for each question
 3. Each trace contains:
-   - A `rag_query` span
-   - A `vector_search` child span
-   - An `llm_generation` with token counts and cost
+   - A `rag_query` span (the whole query)
+   - A `vector_search` child span (the retrieval)
+   - An `llm_generation` with token counts, model name, and provider
 
-### Step 6 checkpoint
+Click into a trace and walk the span tree: you can see the exact input, output, latency, and token cost of every step. **This is observability.** From now on, every component you build gets the same treatment — just slap `@observe` on it.
+
+### Step 4 checkpoint
 
 - [ ] `uv run python scripts/hello_rag_traced.py` runs without errors
+- [ ] Answers are relevant to the questions (they cite the NexusDoc brief)
 - [ ] Traces appear in LangFuse at <http://localhost:3000>
-- [ ] Each trace shows: search span → generation → token counts
-- [ ] You can click into a trace and see the full input/output of each step
+- [ ] Each trace shows: `rag_query` span → `vector_search` child span → `llm_generation` with tokens
+- [ ] You can change `DEFAULT_PROVIDER` and re-run to see a different model answer (and the trace reflects the new provider)
 
 ---
 
-## Week 1 — Final Verification
-
-Run this checklist before moving on to Week 2. If anything fails, fix it now — these are the foundations for the entire project.
+## Phase 1 — Final Verification
 
 ### Sanity check script
 
-Create `scripts/week1_verify.py`:
+Create `scripts/phase1_verify.py`:
 
 ```python
-"""Week 1 verification: test everything end-to-end."""
+"""Phase 1 verification: test everything end-to-end."""
 import sys
 from pathlib import Path
 
@@ -1630,7 +1353,7 @@ def check(step: str, condition: bool) -> None:
 
 def main() -> None:
     print("=" * 60)
-    print("NexusDoc Week 1 — Verification")
+    print("NexusDoc Phase 1 — Verification")
     print("=" * 60)
 
     # 1. Config
@@ -1644,7 +1367,7 @@ def main() -> None:
     models = provider.list_models()
     check(f"Provider lists {len(models)} models", len(models) > 0)
 
-    # 3. Groq API call
+    # 3. LLM call
     from app.core.providers.base import ChatMessage
     result = provider.chat(
         messages=[ChatMessage(role="user", content="Say exactly: nexusdoc-ok")],
@@ -1670,7 +1393,7 @@ def main() -> None:
     check(f"Trace created: {trace_id}", trace_id is not None)
 
     print("\n" + "=" * 60)
-    print("✅ ALL CHECKS PASSED — Week 1 complete!")
+    print("✅ ALL CHECKS PASSED — Phase 1 complete!")
     print(f"   Provider:  {rag_result['provider']}")
     print(f"   Model:     {rag_result['model']}")
     print(f"   Tokens:    {rag_result['usage']['total_tokens']}")
@@ -1685,58 +1408,60 @@ if __name__ == "__main__":
 Run it:
 
 ```bash
-uv run python scripts/week1_verify.py
+uv run python scripts/phase1_verify.py
 ```
 
 ### Final checklist
 
-- [ ] `week1_verify.py` passes all checks
+- [ ] `phase1_verify.py` passes all checks
 - [ ] Traces visible in LangFuse with search spans and token counts
-- [ ] Switching `DEFAULT_PROVIDER` in `.env` changes which model answers
+- [ ] Switching `DEFAULT_PROVIDER` in `.env` changes which model answers (and the trace reflects it)
 - [ ] `ruff check .` passes
 - [ ] `mypy app/` passes
 - [ ] All three providers (Groq, OpenRouter, Ollama) work when configured
-- [ ] Git commit made: `git add -A && git commit -m "Week 1: Foundation — model registry, LangFuse, hello-world RAG"`
+- [ ] Git commit: `git add app/ tests/ scripts/ data/sample_docs/ pyproject.toml .env.example .gitignore docker-compose.yml .pre-commit-config.yaml && git commit -m "Phase 1: Foundation — model registry, LangFuse, hello-world RAG"`
 
 ---
 
-## What You Actually Learned This Week
+## What You Actually Learned
 
-This isn't just a checklist — these are the skills you now have:
+This isn't just a checklist — these are the skills you now have, all directly relevant to target job roles:
 
 | Skill | Where you used it | Why it matters for AI jobs |
 | ------- | ------------------- | --------------------------- |
 | **Provider abstraction** | `BaseProvider` → 3 implementations | Production AI systems switch providers based on cost/latency/availability. You built the pattern. |
 | **Pydantic Settings** | `app/core/config.py` | Every AI codebase uses typed config. You know the standard approach. |
 | **Docker Compose for AI infra** | LangFuse container | AI systems run databases, vector stores, and observability — all containerized. |
-| **LLM observability** | `@observe` decorator, traces, spans | LLMOps jobs list LangFuse/MLflow/W&B as requirements. You instrumented from day one. |
+| **LLM observability** | `@observe` decorator, traces, spans, generations | LLMOps jobs list LangFuse/MLflow/W&B. You instrumented from day one. |
 | **Embeddings & semantic search** | `InMemoryVectorStore` with cosine similarity | RAG is the #1 AI pattern in production. You built it from scratch. |
 | **Prompt engineering** | System/user prompt construction in `rag_query` | Knowing how to structure prompts for retrieval + generation is table stakes. |
 | **Free-tier-first design** | Groq + OpenRouter + Ollama | Real AI engineering means cost-conscious architecture. Your pipeline runs at $0. |
 
 ---
 
-## What's Next (Week 2 Preview)
+## What's Next (Phase 2 Preview)
 
-In Week 2 you'll replace the in-memory store with a real database:
+In Phase 2 you'll replace the in-memory store with a real database and start ingesting real documents:
 
-- SEC EDGAR API: fetch real 10-K/10-Q filings
-- PyMuPDF: parse PDFs into text and metadata
-- pgvector: store vectors in Postgres (Supabase free tier)
-- Proper chunking with page citations
+- **arXiv API**: fetch real research papers (PDF) via the `arxiv` Python package
+- **IETF RFC rsync**: bulk-download plain-text RFCs
+- **PyMuPDF**: parse PDFs into text and page metadata
+- **pgvector on Supabase**: store vectors in Postgres (free tier) with HNSW indexing
 
-The model registry you built this week will route every call. The LangFuse tracing will show every embedding and retrieval. Nothing this week gets thrown away — it all scales forward.
+The model registry you built this phase will route every call. The LangFuse tracing will show every embedding and retrieval. **Nothing this phase gets thrown away — it all scales forward.**
 
 ---
 
 ## If You Get Stuck
 
-1. **Groq API key not working?** Check <https://console.groq.com/keys> — free tier keys expire after inactivity. Generate a new one.
-2. **LangFuse won't start?** Run `docker compose logs langfuse` and check for port conflicts. If port 3000 is busy, change the port mapping.
-3. **Ollama model not found?** Run `ollama list` — if empty, `ollama pull llama3.2:3b`.
-4. **Embedding model download fails?** sentence-transformers pulls from HuggingFace. If blocked (corporate VPN, China), set `HF_ENDPOINT=https://hf-mirror.com`.
-5. **Type errors from mypy?** Run `mypy app/ --follow-imports=skip` if third-party stubs are missing. This is common with newer packages.
+1. **Groq API key not working?** Check <https://console.groq.com/keys> — free tier keys can be deactivated after inactivity. Generate a new one. It's instant and free.
+2. **LangFuse won't start?** Run `docker compose logs langfuse` and check for port conflicts. If port 3000 is busy, change the port mapping in `docker-compose.yml` and update `LANGFUSE_HOST` in `.env`.
+3. **Ollama model not found?** Run `ollama list` — if empty, `ollama pull llama3.2:3b`. The first pull is ~4.7 GB.
+4. **Embedding model download fails?** `sentence-transformers` pulls from HuggingFace. If blocked (corporate VPN, region), set `HF_ENDPOINT=https://hf-mirror.com` in your `.env`.
+5. **mypy errors from third-party stubs?** Run `mypy app/ --follow-imports=skip` if third-party stubs are missing. Common with newer packages — fixable in Phase 2 by adding `mypy` stubs or per-package overrides.
+6. **`langfuse_context` errors?** It only works inside a function decorated with `@observe`. Make sure every manual `langfuse_context.*` call happens beneath an `@observe`-decorated function in the call stack.
+7. **Cosine similarity returns `NaN`?** Check that `_vectors` isn't `None` and that no chunk is empty (zero-vector → divide-by-zero). Add a guard in `add_document` to skip empty chunks.
 
 ---
 
-*Week 1 complete. Take a breath. You just built the foundation of a production AI system.*
+*Phase 1 complete. You just built the foundation of a production AI system — and the three concepts that were new to you (provider abstraction, RAG, observability) are now in your toolkit. The next 11 phases build on this.*

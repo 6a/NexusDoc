@@ -1,0 +1,11 @@
+{
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Windows",
+  "venvPath": ".",
+  "venv": ".venv",
+  "typeCheckingMode": "strict",
+  "include": ["app", "tests", "scripts"],
+  "exclude": [".venv", ".mypy_cache", ".ruff_cache", ".pi-subagents"],
+  "reportMissingTypeStubs": false,
+  "reportUnknownMemberType": false
+}

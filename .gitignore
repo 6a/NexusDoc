@@ -4,3 +4,8 @@ dist/
 *.log
 __pycache__/
 *.pyc
+.mypy_cache/
+*.egg-info/
+.venv/
+.ruff_cache/
+.pi-subagents/
