@@ -7,8 +7,8 @@
 > Sample doc path is now `data/sample_docs/appliance_manual_excerpt.txt`.
 
 **Started:** 2026-07-11
-**Last session:** 2026-07-11
-**Last commit:** `d5770fa` — "Sets up basic project layout and development environment"
+**Last session:** 2026-07-12
+**Last commit:** `2d3b290` — design + walkthrough refresh (Step 2 work **uncommitted**)
 
 ---
 
@@ -20,8 +20,8 @@
 | 1.2 | `pyproject.toml` (full) | ✅ Done | Walked through all 6 sections line-by-line |
 | 1.2.1 | `.python-version` | ✅ Done | Pinned to `3.13` (best mix of speed + wheel support) |
 | 1.3 | `uv venv` + deps | ✅ Done | Python 3.13.6, all deps installed |
-| 1.4a | `.env.example` | ✅ Done | Created, committed |
-| 1.4b | `.env` | ✅ Done | Groq API key filled in during session |
+| 1.4a | `.env.example` | ✅ Done | Standard names (`GROQ_API_KEY`, etc.) |
+| 1.4b | `.env` | ✅ Done | Project-local only (`DEFAULT_PROVIDER`, `OLLAMA_HOST`, `LOG_LEVEL`); API keys in **OS env** |
 | 1.5 | `.pre-commit-config.yaml` | ✅ Done | Created, `pre-commit install` ran |
 | 1.6 | Directory structure | ✅ Done | `app/core/providers/`, `tests/`, `scripts/`, `data/sample_docs/` |
 | — | `ruff check .` | ✅ Passes | |
@@ -37,13 +37,23 @@
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 2.1 | Concept explained | ✅ Done | Strategy pattern, provider abstraction |
-| 2.2 | Design reviewed | ⬜ Not started | Align with DESIGN: Groq + Ollama first; retry/429 |
-| 2.3 | `app/core/config.py` | ⬜ Not started | |
-| 2.4 | `app/core/providers/base.py` | ⬜ Not started | |
-| 2.5 | `app/core/providers/groq_provider.py` | ⬜ Not started | |
-| 2.6 | `app/core/model_registry.py` | ⬜ Not started | |
-| 2.7 | Tests | ⬜ Not started | |
+| 2.1 | Concept explained | ✅ Done | Strategy pattern, provider abstraction; `@dataclass`, `ABC`, decorators |
+| 2.2 | Design reviewed | ✅ Done | Groq + Ollama first; OpenRouter deferred; OS env for API keys OK |
+| 2.3 | `app/core/config.py` | ✅ Done | Pydantic Settings + `Field(repr=False)` on secrets/hosts; `uv sync --extra dev` for mypy |
+| 2.4 | `app/core/providers/base.py` | ✅ Done | `Role = Literal[...]`, `ChatMessage`, `CompletionResult`, `BaseProvider`; `dict[str, int]` for usage |
+| 2.5 | `app/core/providers/groq_provider.py` | ✅ Done | mypy passes; manual smoke test (`pong`) OK |
+| — | `app/core/providers/messages.py` | ✅ Done | Shared `to_chat_message_params()`; vendor-neutral `ChatMessageParam` |
+| 2.6 | `app/core/model_registry.py` | ⬜ Not started | **Next up** |
+| 2.7 | Tests | ⬜ Not started | Integration smoke: assert contract/shape, not model quality |
+
+**Step 2 in progress** (~70% — registry + tests remain).
+
+### Session notes (2026-07-12)
+
+- Groq SDK `usage` is `Optional` — assign `usage = response.usage` for mypy narrowing.
+- Cast `to_chat_message_params()` → `list[ChatCompletionMessageParam]` at provider boundary.
+- PowerShell `python -c`: use double-outer / single-inner quotes; prefer `scripts/*.py` for multi-line.
+- Provider smoke tests: worth adding in 2.7; skip in CI without key; model regressions → Phase 5 evals.
 
 ---
 
@@ -54,7 +64,7 @@
 | 3.1 | `ollama_provider.py` | ⬜ Not started | **Priority** — RTX 5080 self-host path |
 | 3.2 | `openrouter_provider.py` | ⬜ Deferred | Only after POC + optional $10 credits |
 | 3.3 | Update registry | ⬜ Not started | Groq + Ollama; retry/fallback |
-| 3.4 | Test Groq + Ollama | ⬜ Not started | Pull e.g. `qwen2.5:7b` or `llama3.1:8b` |
+| 3.4 | Test Groq + Ollama | ⬜ Not started | Pull e.g. `ollama pull qwen2.5:7b` |
 
 ---
 
@@ -74,8 +84,9 @@
 
 ## Pending Actions for Next Session
 
-1. Confirm `GROQ_API_KEY` still in `.env`
-2. Pull Ollama model for 5080: e.g. `ollama pull qwen2.5:7b`
-3. Start Step 2.3 — `app/core/config.py`
-4. When reaching Step 4: copy Langfuse **official** `docker-compose.yml` — do not use obsolete single-service config
-5. Re-read `DESIGN.md` cut list before adding features
+1. **Step 2.6** — implement `app/core/model_registry.py` (`get_provider`, `reset_provider`)
+2. **Step 2.7** — `tests/test_model_registry.py` (integration smoke, `skipif` no key; contract not `pong`)
+3. Commit Step 2 work when ready (uncommitted: `config.py`, `base.py`, `messages.py`, `groq_provider.py`, `.env.example`)
+4. Pull Ollama model for 5080 before Step 3: `ollama pull qwen2.5:7b`
+5. When reaching Step 4: copy Langfuse **official** `docker-compose.yml` — do not use obsolete single-service config
+6. Re-read `DESIGN.md` cut list before adding features
