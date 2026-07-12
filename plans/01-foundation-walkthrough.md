@@ -1,13 +1,21 @@
 # Phase 1 — Foundation Walkthrough
 
-> **Role:** Senior-dev-led tutorial for a system/tool programmer pivoting into AI deployment engineering.
-> **Estimated total time:** ~4 hours (four sessions, roughly 30 / 75 / 45 / 75 minutes)
-> **Prerequisite reading:** `DESIGN.md` (the NexusDoc architecture doc — read the "Architecture", "Model Serving Layer", and "Phase 1" sections at minimum)
-> **Outcome:** A working RAG pipeline with provider-agnostic model calls, self-hosted observability, and end-to-end tracing — all running on free tiers. Every line written here becomes the foundation for the remaining 11 phases.
+> **⚠️ SUPERSEDED SCOPE (2026-07-12):** `DESIGN.md` was rewritten for a **Japan FDE / ~45h** plan.
+> - **Domain:** appliance support manuals (EN+JP), not arXiv/RFC.
+> - **Providers:** Groq + **Ollama on RTX 5080**; OpenRouter only after $10 credits if needed.
+> - **Langfuse:** use the **official** multi-service compose (ClickHouse + Redis + MinIO + worker) — the single-container YAML in Step 4.1 below is **obsolete and will fail**.
+> - **Later phases:** no multi-agent risk supervisor, no RedisVL, no Colab vLLM before Sept.
+> Follow this walkthrough for **registry + traced hello-RAG** mechanics only; treat sample-doc / Langfuse / roadmap text as stale where it conflicts with `DESIGN.md`.
 >
-> **📋 Progress tracking:** See [`01-foundation-walkthrough-progress.md`](01-foundation-walkthrough-progress.md) — check that file before resuming a session. Update it as you complete each checkpoint.
+> **Role:** Senior-dev-led tutorial for a system/tool programmer pivoting into Japan AI FDE / applied AI integration.
+> **Estimated total time:** ~5 hours (DESIGN Phase 1)
+> **Prerequisite reading:** `DESIGN.md` (Architecture, Cost, Phase 1)
+> **Outcome:** Provider registry (Groq + Ollama), Langfuse tracing, hello-world RAG on a sample manual excerpt.
+>
+> **📋 Progress tracking:** [`01-foundation-walkthrough-progress.md`](01-foundation-walkthrough-progress.md)
 
 ---
+
 
 ## Before We Start — What You're Actually Building
 
@@ -17,26 +25,25 @@ By the end of Phase 1 you will have:
 ┌─────────────────────────────────────────────────┐
 │              Your Code (app/core/)              │
 │  ┌───────────────────────────────────────────┐  │
-│  │         Model Registry                    │  │
-│  │  Groq ── OpenRouter ── Ollama (local)     │  │
-│  │  env-switchable, one interface            │  │
+│  │  Groq ── Ollama (RTX 5080) ── (OpenRouter optional) │
+│  │  env-switchable, one interface            │
 │  └───────────────┬───────────────────────────┘  │
 │                  │                              │
 │  ┌───────────────▼───────────────────────────┐  │
-│  │         Hello-World RAG                   │  │
+│  │   Hello-World RAG (appliance excerpt)     │  │
 │  │  Embed doc → Vector store → Query → Answer│  │
 │  └───────────────┬───────────────────────────┘  │
 │                  │                              │
 │  ┌───────────────▼───────────────────────────┐  │
-│  │         LangFuse (Docker)                 │  │
+│  │   Langfuse (official Docker compose)      │  │
 │  │  Every call traced: latency, tokens, cost │  │
 │  └───────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
 ```
 
-**This is not a toy.** The model registry you build in Step 2 routes every LLM call for the next 11 phases. The LangFuse instrumentation you add in Step 4 traces every agent decision you build in Phase 4. The `@observe` decorator pattern you learn here will wrap every retrieval, rerank, and guardrail step you build later. Take your time — Phases 2-12 are dramatically easier if Phase 1 is solid.
+**This is not a toy.** The model registry routes every LLM call for later phases. Langfuse instrumentation traces retrieval and generation. Take your time — later phases are easier if Phase 1 is solid.
 
-**Where your existing knowledge helps:** You've integrated AI APIs before, so Step 2's "talk to Groq" part will feel familiar. Where it gets new is the **abstraction pattern** (the registry), **RAG end-to-end** (you haven't built one), and **observability** (entirely new to you). Those three are where you'll spend the most brain cycles.
+**Where your existing knowledge helps:** You've integrated OpenAI-style APIs before, so Groq will feel familiar. New: **registry pattern**, **RAG**, **observability**.
 
 ---
 
@@ -52,8 +59,9 @@ A **provider** is the service that runs the model and exposes an API. Think of i
 | ---------- | ----------- | --------------- |
 | **Groq** | LPU-based inference (custom chips, not GPUs). Extremely fast, generous free tier. | Primary provider. Free, fast. |
 | **OpenRouter** | Aggregator. Routes your request to whichever backend has capacity. | Fallback when Groq rate-limits us. |
-| **Ollama** | Runs models locally on your machine. No network, no API key, no cost. | Offline dev, privacy-sensitive data, zero cost. |
-| **vLLM (Phase 7)** | Production-grade model server. You benchmark it on Colab's free T4 and serve the live demo via Ollama — zero GPU rental cost. | The "deployment engineer" story — later. |
+| **Ollama** | Runs models locally (use RTX 5080). No API key, no cloud cost. | Self-host / offline path — **primary local provider** |
+| **vLLM** | Deferred past Sept (Blackwell wheel/source friction). | Optional later; not Phase 1–7 critical path |
+| **OpenRouter** | Aggregator; free tier is **50 RPD** until $10 lifetime credits. | Optional overflow after POC — not required for Phase 1 |
 
 The key insight: **all of these speak the same API format** (OpenAI-compatible chat completions). Your job in Step 2 is to build a thin adapter layer so you can switch providers by changing one environment variable. This is not over-engineering — it's the difference between "I built an app that calls Groq" and "I built an app that routes to any OpenAI-compatible provider." The latter is what AI deployment engineers do, and it's what lets you drop in a self-hosted vLLM endpoint in Phase 7 without rewriting your codebase.
 
@@ -136,9 +144,10 @@ Before you start coding, create these accounts and install these tools. All are 
 
 | Service | Sign-up URL | What you need |
 | --------- | ------------ | --------------- |
-| **Groq** | <https://console.groq.com> | Create account → API Keys → copy key |
-| **OpenRouter** | <https://openrouter.ai> | Create account → API Keys → copy key |
-| **Supabase** | <https://supabase.com> | Create account → new project → copy connection string (you won't use it until Phase 2, but create it now) |
+| **Groq** | <https://console.groq.com> | API key — primary for cloud/demo |
+| **Ollama** | local install | Pull a 7B-class model for the RTX 5080 |
+| **Supabase** | <https://supabase.com> | Project + connection string (Phase 2+); create now |
+| **OpenRouter** | optional | Only after E2E POC; add **$10** credits once if you need 1000 RPD |
 
 ### Tools to install
 
@@ -160,11 +169,13 @@ docker --version      # should print Docker version 27.x.x or later
 ollama --version      # should print ollama version 0.x.x
 git --version         # should print git version 2.x.x
 
-# Pull a small model for local testing (takes ~5 min, ~4.7 GB):
-ollama pull llama3.2:3b
+# Pull a model that fits the RTX 5080 (preferred for Phase 1+):
+ollama pull qwen2.5:7b
+# Smaller CPU-friendly option if needed for a quick smoke test:
+# ollama pull llama3.2:3b
 ```
 
-> **Why `llama3.2:3b`?** It's small enough to run on CPU-only machines while you get the pipeline working. Phase 3 upgrades to a larger model. If you have a GPU and want a stronger local fallback now, `ollama pull qwen2.5:7b` works too — but 3b is enough for Phase 1.
+> **Why `qwen2.5:7b`?** Fits 16GB VRAM comfortably and is strong enough for EN+JP support Q&A. Use `llama3.2:3b` only if you need a tiny offline smoke test without loading a 7B.
 
 ---
 
@@ -684,103 +695,18 @@ If you see `ping → pong` in the output, your model registry works. This is the
 
 ---
 
-## Step 3 — Add OpenRouter + Ollama Providers (~20 min, follow the same pattern)
+## Step 3 — Add Ollama Provider (~20 min; OpenRouter optional/deferred)
 
-**Goal:** Two more providers, same interface. Switch between them by changing one env var.
+**Goal:** Local provider on the RTX 5080. Switch with one env var.
 
-You've built Groq. These two are the exact same pattern with a different `__init__` and client library. This step is intentionally thin — the point is to internalize that *the abstraction is the deliverable, not the number of providers.*
+OpenRouter is **deferred** per `DESIGN.md` (50 RPD until $10 credits). Skip `openrouter_provider.py` until after E2E POC unless you already paid the $10.
 
-### 3.1 Write the OpenRouter provider
-
-Create `app/core/providers/openrouter_provider.py`:
-
-```python
-"""OpenRouter provider — model aggregator with a free tier.
-
-OpenRouter routes requests to the cheapest available backend.
-The free tier limits you to specific free models but requires
-no payment method.
-
-API docs: https://openrouter.ai/docs
-"""
-
-from openai import OpenAI
-
-from app.core.config import settings
-from app.core.providers.base import BaseProvider, ChatMessage, CompletionResult
-
-
-class OpenRouterProvider(BaseProvider):
-    """OpenRouter chat completion provider.
-
-    Uses the OpenAI-compatible endpoint. The OpenAI Python SDK
-    works with any OpenAI-compatible server by setting base_url.
-    """
-
-    def __init__(self) -> None:
-        if not settings.openrouter_api_key:
-            raise ValueError(
-                "OPENROUTER_API_KEY is not set. Get a free key at https://openrouter.ai/keys"
-            )
-        self._client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.openrouter_api_key,
-        )
-
-    @property
-    def provider_name(self) -> str:
-        return "openrouter"
-
-    def chat(
-        self,
-        messages: list[ChatMessage],
-        model: str | None = None,
-        temperature: float = 0.0,
-        max_tokens: int = 1024,
-    ) -> CompletionResult:
-        model = model or "meta-llama/llama-3.3-70b-instruct"
-
-        response = self._client.chat.completions.create(
-            model=model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        choice = response.choices[0]
-        return CompletionResult(
-            content=choice.message.content or "",
-            model=response.model,
-            usage={
-                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-                "total_tokens": response.usage.total_tokens if response.usage else 0,
-            },
-        )
-
-    def list_models(self) -> list[str]:
-        """Free-tier models on OpenRouter (subject to change)."""
-        return [
-            "meta-llama/llama-3.3-70b-instruct",
-            "google/gemma-2-9b-it",
-            "qwen/qwen-2.5-7b-instruct",
-        ]
-```
-
-> **Notice:** `OpenRouterProvider` uses the `openai` Python package, not a special OpenRouter SDK. This is because OpenRouter exposes an OpenAI-compatible endpoint. **The same `openai` package will also work with vLLM in Phase 7.** This is why you're building the abstraction now — adding vLLM later will be a ~15-line provider class with zero changes to downstream code.
-
-### 3.2 Write the Ollama provider
+### 3.1 Write the Ollama provider
 
 Create `app/core/providers/ollama_provider.py`:
 
 ```python
-"""Ollama provider — local model inference.
-
-Ollama runs models on your machine. No API key, no network,
-no rate limits, no cost. Great for development and offline work.
-
-Requires: ollama installed and a model pulled (e.g., ollama pull llama3.2:3b)
-"""
+"""Ollama provider — local inference on the workstation GPU (RTX 5080)."""
 
 from ollama import Client
 
@@ -789,8 +715,6 @@ from app.core.providers.base import BaseProvider, ChatMessage, CompletionResult
 
 
 class OllamaProvider(BaseProvider):
-    """Ollama local chat completion provider."""
-
     def __init__(self) -> None:
         self._client = Client(host=settings.ollama_host)
 
@@ -805,17 +729,12 @@ class OllamaProvider(BaseProvider):
         temperature: float = 0.0,
         max_tokens: int = 1024,
     ) -> CompletionResult:
-        model = model or "llama3.2:3b"
-
+        model = model or "qwen2.5:7b"
         response = self._client.chat(
             model=model,
             messages=[{"role": m.role, "content": m.content} for m in messages],
-            options={
-                "temperature": temperature,
-                "num_predict": max_tokens,
-            },
+            options={"temperature": temperature, "num_predict": max_tokens},
         )
-
         return CompletionResult(
             content=response["message"]["content"],
             model=response["model"],
@@ -828,7 +747,6 @@ class OllamaProvider(BaseProvider):
         )
 
     def list_models(self) -> list[str]:
-        """List locally pulled models."""
         try:
             models = self._client.list()
             return [m["name"] for m in models.get("models", [])]
@@ -836,97 +754,67 @@ class OllamaProvider(BaseProvider):
             return []
 ```
 
-### 3.3 Update the registry
-
-Edit `app/core/model_registry.py` — uncomment and add the new providers:
-
-```python
-from app.core.providers.openrouter_provider import OpenRouterProvider
-from app.core.providers.ollama_provider import OllamaProvider
-
-# In get_provider():
-    elif name == "openrouter":
-        _provider = OpenRouterProvider()
-    elif name == "ollama":
-        _provider = OllamaProvider()
+```bash
+ollama pull qwen2.5:7b
 ```
 
-### 3.4 Test all three
+### 3.2 Update the registry
+
+Wire `ollama` into `get_provider()`. Prefer **retry + fallback** (e.g. Groq 429 → Ollama) in one place in the registry.
+
+### 3.3 Test Groq + Ollama
 
 ```bash
-# Test Groq (set DEFAULT_PROVIDER=groq in .env)
+# DEFAULT_PROVIDER=groq
 uv run pytest tests/test_model_registry.py -v -s
 
-# Test OpenRouter (change DEFAULT_PROVIDER=openrouter, run again)
-uv run pytest tests/test_model_registry.py -v -s
-
-# Test Ollama (change DEFAULT_PROVIDER=ollama, run again)
+# DEFAULT_PROVIDER=ollama
 uv run pytest tests/test_model_registry.py -v -s
 ```
 
 ### Step 3 checkpoint
 
-- [ ] All three providers pass the same test
-- [ ] You can switch providers with one env var change
-- [ ] `ollama list` shows at least one pulled model
-- [ ] You ran the test with Ollama and it completed successfully (no network needed — Ollama is your "offline always-available" provider)
+- [ ] Groq and Ollama pass the same chat test
+- [ ] `ollama list` shows a pulled model
+- [ ] Switching `DEFAULT_PROVIDER` changes the backend
 
 ---
 
-## Step 4 — LangFuse Self-Hosted + Hello-World Traced RAG (~75 min, DEEP)
+## Step 3b — OpenRouter (deferred)
+
+Only after POC. Remember: free models are **50 RPD** without $10 lifetime credits.
+
+Use the `openai` SDK with `base_url=https://openrouter.ai/api/v1` and prefer `:free` model IDs when on free quota. Do not rely on OpenRouter for CI until unlocked.
+
+---
+
+## Step 4 — Langfuse Self-Hosted + Hello-World Traced RAG (~75–90 min, DEEP)
 
 **Goal:** LangFuse running in Docker. Then a minimal RAG pipeline (chunk → embed → retrieve → generate) with every step automatically traced.
 
 This combines the two concepts that are newest to you — observability and RAG — into one step. We'll set up LangFuse first (you need API keys for the tracing code), then build the pipeline, then instrument it.
 
-### 4.1 LangFuse via Docker Compose
+### 4.1 Langfuse via official Docker Compose (**do not use a single-container hack**)
 
-Create `docker-compose.yml` in the project root:
+Modern Langfuse **requires** Postgres + ClickHouse + Redis + MinIO + `langfuse-web` + `langfuse-worker`. A lone `langfuse` service with `DATABASE_URL=...@localhost` will fail.
 
-```yaml
-# LangFuse self-hosted — single-container setup for local development.
-# For production, see: https://langfuse.com/docs/deployment/self-host
-#
-# We use LangFuse's pre-built image. If the exact image/env changes,
-# check the self-host docs — the important thing is a running instance.
+**Do this:**
 
-services:
-  langfuse:
-    image: ghcr.io/langfuse/langfuse:latest
-    ports:
-      - "3000:3000"
-    environment:
-      # Generate with: openssl rand -hex 32
-      NEXTAUTH_SECRET: "${LANGFUSE_SECRET_KEY}"
-      SALT: "${LANGFUSE_SECRET_KEY}"
-      ENCRYPTION_KEY: "${LANGFUSE_SECRET_KEY}"
-      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
-      NEXTAUTH_URL: "http://localhost:3000"
-      TELEMETRY_ENABLED: "false"
-      # Initial admin user (created on first launch)
-      LANGFUSE_INIT_USER_EMAIL: "admin@nexusdoc.local"
-      LANGFUSE_INIT_USER_PASSWORD: "nexusdoc-dev"
-      LANGFUSE_INIT_USER_NAME: "NexusDoc Admin"
-      LANGFUSE_INIT_ORG_ID: "nexusdoc"
-      LANGFUSE_INIT_ORG_NAME: "NexusDoc"
-      LANGFUSE_INIT_PROJECT_ID: "nexusdoc-dev"
-      LANGFUSE_INIT_PROJECT_NAME: "nexusdoc-dev"
-    volumes:
-      - langfuse_data:/var/lib/langfuse
-    restart: unless-stopped
-
-volumes:
-  langfuse_data:
-```
-
-Start it:
+1. Copy the official compose from Langfuse:  
+   <https://github.com/langfuse/langfuse/blob/main/docker-compose.yml>  
+   into this repo as `docker-compose.yml` (or `docker-compose.langfuse.yml`).
+2. Pin ClickHouse to a supported tag if `latest` breaks (see Langfuse issues — avoid untested 26.x until docs say otherwise). Prefer the versions in Langfuse’s own file / docs.
+3. Set secrets via `.env` (`NEXTAUTH_SECRET`, `SALT`, `ENCRYPTION_KEY`, DB passwords) — generate with `openssl rand -hex 32`.
+4. Set init user/project env vars if you want a deterministic local admin (see official compose comments).
 
 ```bash
 docker compose up -d
-docker compose ps    # should show langfuse as "Up"
+docker compose ps    # web, worker, postgres, clickhouse, redis, minio should be healthy
 ```
 
-> **If it won't start:** run `docker compose logs langfuse` and check for port conflicts. If port 3000 is busy, change the port mapping (`"3001:3000"` and use `http://localhost:3001`).
+> **Docs:** <https://langfuse.com/self-hosting>  
+> **If port 3000 is busy:** change the web port mapping and set `LANGFUSE_HOST` / `NEXTAUTH_URL` accordingly.  
+> **Windows:** ensure Docker Desktop has enough RAM (ClickHouse stack is heavier than a toy single container).
 
 ### 4.2 Get your LangFuse API keys
 
@@ -993,52 +881,47 @@ Refresh LangFuse at <http://localhost:3000>. You should see a "smoke-test" trace
 
 ### 4.4 Create a sample document
 
-Create `data/sample_docs/nexus_brief.txt`:
+Create `data/sample_docs/appliance_manual_excerpt.txt` (stand-in until Phase 2 PDFs):
 
 ```
-NexusDoc: Multi-Agent Document Intelligence Platform
+NexusWash NW-8000 — User Manual (excerpt, EN)
+Model: NW-8000  |  Language: English  |  Pages: 1–3 (sample)
 
-OVERVIEW
-NexusDoc is an AI-powered platform that ingests dense document corpora
-(research papers via arXiv, specifications via IETF RFCs), runs a
-multi-agent pipeline, and produces structured intelligence reports.
+ERROR CODES
+E12 — Drain fault. Water was not drained within the expected time.
+Procedure:
+1. Pause the cycle and switch the unit off at the wall.
+2. Check that the drain hose is not kinked and the sink outlet is clear.
+3. Clean the drain filter (see Maintenance §3.2).
+4. Restart. If E12 returns within one cycle, contact authorized service.
 
-KEY FEATURES
-- Document ingestion: arXiv API + RFC rsync fetch, parsed via PyMuPDF
-  into text chunks with page and section metadata.
-- Hybrid retrieval: Combines dense vector search with sparse keyword
-  search, then reranks with a cross-encoder (bge-reranker-v2-m3) for
-  accuracy. Signals production-grade RAG.
-- Multi-agent orchestration: A LangGraph supervisor routes queries to
-  specialized agents for retrieval/QA and summarization/risk tagging.
-- Semantic caching: Redis + RedisVL intercepts every LLM call; repeat
-  queries are answered from cache, reducing cost and the free-tier
-  requests-per-day burden.
-- Self-hosted serving: vLLM serves a quantized 7-8B model behind an
-  OpenAI-compatible endpoint, benchmarked for TTFT and throughput.
-- Observability: Every agent step, LLM call, and retrieval is traced
-  in LangFuse with cost attribution per request.
+E27 — Unbalanced load. The drum could not spin up safely.
+Procedure:
+1. Open the door when unlocked.
+2. Redistribute garments evenly around the drum.
+3. Do not mix heavy items (bath mats) with light synthetics in one spin.
+4. Close the door and press Start.
 
-TECHNICAL ARCHITECTURE
-The system uses a provider-agnostic model registry so that any component
-can use Groq, OpenRouter, Ollama, or a self-hosted vLLM endpoint by
-changing one environment variable. Embeddings and reranking run locally
-(bge-m3 + bge-reranker-v2-m3) for zero per-call cost. The vector store
-(pgvector on Supabase) supports hybrid search with HNSW indexing.
+MAINTENANCE §3.2 — Drain filter
+1. Place a shallow tray under the filter cover at the front bottom.
+2. Turn the filter cap counter-clockwise; expect residual water.
+3. Remove lint and debris; rinse the filter under tap water.
+4. Refit the cap firmly clockwise until hand-tight. Do not over-tighten.
 
-PROBLEM STATEMENT
-Analysts, engineers, and compliance teams spend significant time
-manually extracting information from documents that mix prose, tables,
-and structure. NexusDoc automates this end-to-end: document ->
-intelligence, with citations.
-
-TARGET METRICS
-- RAG faithfulness >90%
-- End-to-end latency <30s for a 50-page document
-- 15-20 curated eval cases with a CI eval gate
+SAFETY
+Do not put hands in the drum while it is moving.
+Disconnect mains power before removing the drain filter.
 ```
 
-> **Why this document?** It's self-contained, it uses vocabulary from the project (so your RAG answers will feel grounded), and it mirrors the arXiv/RFC doc domains you'll process in later phases. You'll build real arXiv PDF ingestion in Phase 2; for now this proves the pipeline works end-to-end.
+Also add a tiny JP stub `data/sample_docs/appliance_manual_excerpt_ja.txt` for bilingual smoke tests later:
+
+```
+NexusWash NW-8000 — 取扱説明書（抜粋）
+エラーコード E12 — 排水異常。規定時間内に排水できませんでした。
+対処: 電源を切る → 排水ホースの折れを確認 → 排水フィルター清掃（§3.2）→ 再起動。
+```
+
+> **Why this document?** Matches the locked DESIGN domain (support manuals, cited troubleshooting). Phase 2 replaces this with real manufacturer EN+JP PDFs.
 
 ### 4.5 Write the minimal RAG pipeline with tracing
 
@@ -1269,8 +1152,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.rag.pipeline import Embedder, InMemoryVectorStore, rag_query
 
 # Load document
-doc_path = Path("data/sample_docs/nexus_brief.txt")
-text = doc_path.read_text()
+doc_path = Path("data/sample_docs/appliance_manual_excerpt.txt")
+text = doc_path.read_text(encoding="utf-8")
 
 # Build vector store
 print("Building vector store...")
@@ -1281,10 +1164,9 @@ print(f"Vector store ready: {store.chunk_count} chunks\n")
 
 # Ask questions
 questions = [
-    "What is NexusDoc?",
-    "How does the retrieval system work?",
-    "What model is used for model serving?",
-    "What are the target metrics?",
+    "What does error code E12 mean?",
+    "How do I clean the drain filter?",
+    "What should I do for an unbalanced load E27?",
 ]
 
 for q in questions:
@@ -1379,11 +1261,11 @@ def main() -> None:
     from app.rag.pipeline import Embedder, InMemoryVectorStore, rag_query
     embedder = Embedder()
     store = InMemoryVectorStore(embedder)
-    doc_path = Path("data/sample_docs/nexus_brief.txt")
-    store.add_document(doc_path.read_text())
+    doc_path = Path("data/sample_docs/appliance_manual_excerpt.txt")
+    store.add_document(doc_path.read_text(encoding="utf-8"))
     check(f"Document chunked: {store.chunk_count} chunks", store.chunk_count > 0)
 
-    rag_result = rag_query("What is NexusDoc?", store)
+    rag_result = rag_query("What does error code E12 mean?", store)
     check("RAG returns answer", len(rag_result["answer"]) > 10)
     check("RAG returns sources", len(rag_result["sources"]) > 0)
     check("RAG returns token usage", rag_result["usage"]["total_tokens"] > 0)
@@ -1418,8 +1300,8 @@ uv run python scripts/phase1_verify.py
 - [ ] Switching `DEFAULT_PROVIDER` in `.env` changes which model answers (and the trace reflects it)
 - [ ] `ruff check .` passes
 - [ ] `mypy app/` passes
-- [ ] All three providers (Groq, OpenRouter, Ollama) work when configured
-- [ ] Git commit: `git add app/ tests/ scripts/ data/sample_docs/ pyproject.toml .env.example .gitignore docker-compose.yml .pre-commit-config.yaml && git commit -m "Phase 1: Foundation — model registry, LangFuse, hello-world RAG"`
+- [ ] Groq and Ollama work when configured
+- [ ] Git commit: Phase 1 foundation (registry, Langfuse, hello-world RAG on appliance excerpt)
 
 ---
 
@@ -1441,14 +1323,13 @@ This isn't just a checklist — these are the skills you now have, all directly 
 
 ## What's Next (Phase 2 Preview)
 
-In Phase 2 you'll replace the in-memory store with a real database and start ingesting real documents:
+In Phase 2 you'll ingest **real EN+JP appliance manuals** (see `DESIGN.md`):
 
-- **arXiv API**: fetch real research papers (PDF) via the `arxiv` Python package
-- **IETF RFC rsync**: bulk-download plain-text RFCs
-- **PyMuPDF**: parse PDFs into text and page metadata
-- **pgvector on Supabase**: store vectors in Postgres (free tier) with HNSW indexing
+- Curate 15–30 official manufacturer PDFs
+- **PyMuPDF** parse → page metadata; flag empty OCR pages
+- **pgvector on Supabase** with HNSW indexing
 
-The model registry you built this phase will route every call. The LangFuse tracing will show every embedding and retrieval. **Nothing this phase gets thrown away — it all scales forward.**
+The model registry and Langfuse tracing from this phase carry forward. **Nothing here is thrown away** — only the domain and later-phase cuts in `DESIGN.md` changed.
 
 ---
 

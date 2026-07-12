@@ -1,0 +1,27 @@
+NexusWash NW-8000 — User Manual (excerpt, EN)
+Model: NW-8000  |  Language: English  |  Pages: 1–3 (sample)
+
+ERROR CODES
+E12 — Drain fault. Water was not drained within the expected time.
+Procedure:
+1. Pause the cycle and switch the unit off at the wall.
+2. Check that the drain hose is not kinked and the sink outlet is clear.
+3. Clean the drain filter (see Maintenance §3.2).
+4. Restart. If E12 returns within one cycle, contact authorized service.
+
+E27 — Unbalanced load. The drum could not spin up safely.
+Procedure:
+1. Open the door when unlocked.
+2. Redistribute garments evenly around the drum.
+3. Do not mix heavy items (bath mats) with light synthetics in one spin.
+4. Close the door and press Start.
+
+MAINTENANCE §3.2 — Drain filter
+1. Place a shallow tray under the filter cover at the front bottom.
+2. Turn the filter cap counter-clockwise; expect residual water.
+3. Remove lint and debris; rinse the filter under tap water.
+4. Refit the cap firmly clockwise until hand-tight. Do not over-tighten.
+
+SAFETY
+Do not put hands in the drum while it is moving.
+Disconnect mains power before removing the drain filter.

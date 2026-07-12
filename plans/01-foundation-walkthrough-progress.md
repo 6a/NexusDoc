@@ -1,6 +1,10 @@
 # Phase 1 — Progress Tracker
 
 > Updated as steps are completed. Check this file before resuming a session.
+>
+> **2026-07-12:** `DESIGN.md` rewritten (Japan FDE, appliance manuals, Hetzner, Ollama-on-5080).
+> Walkthrough Step 4.1 Langfuse YAML is replaced by **official compose** instructions.
+> Sample doc path is now `data/sample_docs/appliance_manual_excerpt.txt`.
 
 **Started:** 2026-07-11
 **Last session:** 2026-07-11
@@ -34,7 +38,7 @@
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
 | 2.1 | Concept explained | ✅ Done | Strategy pattern, provider abstraction |
-| 2.2 | Design reviewed | ⬜ Not started | |
+| 2.2 | Design reviewed | ⬜ Not started | Align with DESIGN: Groq + Ollama first; retry/429 |
 | 2.3 | `app/core/config.py` | ⬜ Not started | |
 | 2.4 | `app/core/providers/base.py` | ⬜ Not started | |
 | 2.5 | `app/core/providers/groq_provider.py` | ⬜ Not started | |
@@ -43,33 +47,35 @@
 
 ---
 
-## Step 3 — OpenRouter + Ollama (~20 min)
+## Step 3 — Ollama (+ optional OpenRouter) (~20 min)
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 3.1 | `openrouter_provider.py` | ⬜ Not started | |
-| 3.2 | `ollama_provider.py` | ⬜ Not started | |
-| 3.3 | Update registry | ⬜ Not started | |
-| 3.4 | Test all three | ⬜ Not started | |
+| 3.1 | `ollama_provider.py` | ⬜ Not started | **Priority** — RTX 5080 self-host path |
+| 3.2 | `openrouter_provider.py` | ⬜ Deferred | Only after POC + optional $10 credits |
+| 3.3 | Update registry | ⬜ Not started | Groq + Ollama; retry/fallback |
+| 3.4 | Test Groq + Ollama | ⬜ Not started | Pull e.g. `qwen2.5:7b` or `llama3.1:8b` |
 
 ---
 
-## Step 4 — LangFuse + RAG (~75 min)
+## Step 4 — Langfuse + RAG (~75–90 min)
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 4.1 | Docker Compose | ⬜ Not started | |
-| 4.2 | LangFuse API keys | ⬜ Not started | |
+| 4.1 | Official Langfuse compose | ⬜ Not started | **Not** the old single-container YAML |
+| 4.2 | Langfuse API keys | ⬜ Not started | |
 | 4.3 | Smoke test | ⬜ Not started | |
-| 4.4 | Sample document | ⬜ Not started | |
+| 4.4 | Sample appliance excerpt | ⬜ Not started | `appliance_manual_excerpt.txt` (+ JP stub) |
 | 4.5 | RAG pipeline | ⬜ Not started | |
-| 4.6 | Run script | ⬜ Not started | |
+| 4.6 | Run script | ⬜ Not started | E12 / drain filter questions |
 | — | Verification | ⬜ Not started | |
 
 ---
 
 ## Pending Actions for Next Session
 
-1. Fill in `GROQ_API_KEY` in `.env`
-2. (Optional) Pull Ollama model: `ollama pull llama3.2:3b`
-3. Start Step 2.3 — write `app/core/config.py`
+1. Confirm `GROQ_API_KEY` still in `.env`
+2. Pull Ollama model for 5080: e.g. `ollama pull qwen2.5:7b`
+3. Start Step 2.3 — `app/core/config.py`
+4. When reaching Step 4: copy Langfuse **official** `docker-compose.yml` — do not use obsolete single-service config
+5. Re-read `DESIGN.md` cut list before adding features
