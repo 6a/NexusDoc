@@ -7,6 +7,14 @@
 > - **Later phases:** no multi-agent risk supervisor, no RedisVL, no Colab vLLM before Sept.
 > Follow this walkthrough for **registry + traced hello-RAG** mechanics only; treat sample-doc / Langfuse / roadmap text as stale where it conflicts with `DESIGN.md`.
 >
+> **⚠️ LANGFUSE PYTHON SDK (2026-07-18):** Installed SDK is **v3+ / v4** (e.g. 4.14). Snippets below that use `langfuse.trace()`, `langfuse.decorators`, or `langfuse_context` are **obsolete**. Use:
+> - Smoke: `start_as_current_observation` + `flush()`
+> - App: `from langfuse import observe, propagate_attributes`
+> - Generations: `start_as_current_observation(as_type="generation", …)`
+> - Updates: `client.update_current_span` / `set_current_trace_io` (not `langfuse_context`)
+> Prefer verifying against [Langfuse instrumentation docs](https://langfuse.com/docs/observability/sdk/instrumentation) and the installed package before copying old blocks.
+> - **Package install:** project should be editable (`[build-system]` + hatchling `packages = ["app"]`) so `uv run python scripts/...` can `import app` without `PYTHONPATH` hacks.
+> - **Graph RAG:** optional extension **after Phase 3 hybrid retrieval** in `DESIGN.md` — not part of this Phase 1 walkthrough.
 > **Role:** Senior-dev-led tutorial for a system/tool programmer pivoting into Japan AI FDE / applied AI integration.
 > **Estimated total time:** ~5 hours (DESIGN Phase 1)
 > **Prerequisite reading:** `DESIGN.md` (Architecture, Cost, Phase 1)
@@ -804,7 +812,7 @@ Modern Langfuse **requires** Postgres + ClickHouse + Redis + MinIO + `langfuse-w
    <https://github.com/langfuse/langfuse/blob/main/docker-compose.yml>  
    into this repo as `docker-compose.yml` (or `docker-compose.langfuse.yml`).
 2. Pin ClickHouse to a supported tag if `latest` breaks (see Langfuse issues — avoid untested 26.x until docs say otherwise). Prefer the versions in Langfuse’s own file / docs.
-3. Set secrets via `.env` (`NEXTAUTH_SECRET`, `SALT`, `ENCRYPTION_KEY`, DB passwords) — generate with `openssl rand -hex 32`.
+3. Set secrets via `.env` (`NEXTAUTH_SECRET`, `SALT`, `ENCRYPTION_KEY`, DB passwords) — generate with `python -c "import secrets; print(secrets.token_hex(32))"` (or `openssl rand -hex 32` if available). Keep `DATABASE_URL` password identical to `POSTGRES_PASSWORD` (no literal `<>` placeholders). S3 `*_SECRET_ACCESS_KEY` values must equal `MINIO_ROOT_PASSWORD`.
 4. Set init user/project env vars if you want a deterministic local admin (see official compose comments).
 
 ```bash
@@ -833,44 +841,50 @@ LANGFUSE_HOST=http://localhost:3000
 
 ### 4.3 Smoke-test LangFuse
 
+> **Do not use** the old `langfuse.trace()` / `.span()` / `.generation()` API — removed in SDK v3+.
+
 Create `scripts/test_langfuse.py`:
 
 ```python
-"""Quick smoke test: send a trace to LangFuse and verify it appears."""
+"""Quick smoke test: send a trace to Langfuse and verify it appears."""
+
 from langfuse import Langfuse
 
 from app.core.config import settings
 
-langfuse = Langfuse(
-    secret_key=settings.langfuse_secret_key,
-    public_key=settings.langfuse_public_key,
-    host=settings.langfuse_host,
-)
 
-trace = langfuse.trace(name="smoke-test")
-span = trace.span(name="test-operation")
-span.end()
+def main() -> None:
+    langfuse = Langfuse(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=settings.langfuse_host,
+    )
 
-generation = trace.generation(
-    name="test-llm-call",
-    model="llama-3.3-70b",
-    input="What is the capital of France?",
-    output="Paris",
-    usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-)
-generation.end()
+    if not langfuse.auth_check():
+        raise SystemExit("Langfuse auth_check failed — check LANGFUSE_* keys and that the stack is up")
 
-langfuse.flush()
-print("Sent trace. Check http://localhost:3000")
+    with langfuse.start_as_current_observation(
+        as_type="span",
+        name="nexusdoc-smoke-test",
+        input={"ping": True},
+    ) as span:
+        span.update(output={"pong": True})
+
+    langfuse.flush()
+    print("OK — check Langfuse UI → Traces for 'nexusdoc-smoke-test'")
+
+
+if __name__ == "__main__":
+    main()
 ```
 
-Run it:
+Run it (requires editable package install so `import app` works):
 
 ```bash
 uv run python scripts/test_langfuse.py
 ```
 
-Refresh LangFuse at <http://localhost:3000>. You should see a "smoke-test" trace with a span and a generation.
+Refresh Langfuse at <http://localhost:3000>. You should see a `nexusdoc-smoke-test` trace.
 
 ### Step 4a checkpoint
 
@@ -924,6 +938,20 @@ NexusWash NW-8000 — 取扱説明書（抜粋）
 > **Why this document?** Matches the locked DESIGN domain (support manuals, cited troubleshooting). Phase 2 replaces this with real manufacturer EN+JP PDFs.
 
 ### 4.5 Write the minimal RAG pipeline with tracing
+
+> **SDK remap (mandatory):** the code block that follows was written for an older Langfuse SDK.
+> When implementing, apply this map (session 2026-07-18) — prefer the live adapted file under `app/rag/pipeline.py` once it exists:
+>
+> | Obsolete | Current (langfuse ≥3 / 4.x) |
+> | -------- | --------------------------- |
+> | `from langfuse.decorators import langfuse_context, observe` | `from langfuse import observe, propagate_attributes` |
+> | `langfuse_context.update_current_observation(...)` | `get_langfuse().update_current_span(...)` |
+> | `langfuse_context.update_current_trace(...)` | `propagate_attributes(...)` + `set_current_trace_io(...)` |
+> | `get_langfuse().generation(...); generation.end()` | `with get_langfuse().start_as_current_observation(as_type="generation", ...) as generation:` |
+> | `ChatMessage(role="system", ...)` | `ChatMessage(role=Role.SYSTEM, ...)` (this repo) |
+> | `sys.path.insert` in scripts | editable install (`uv sync`) instead |
+>
+> Docs: <https://langfuse.com/docs/observability/sdk/instrumentation>
 
 Create `app/rag/pipeline.py`:
 
@@ -1134,9 +1162,11 @@ def rag_query(query: str, vector_store: InMemoryVectorStore, top_k: int = 3) -> 
     }
 ```
 
-> **What is `@observe`?** It's a LangFuse decorator that automatically creates a span when the function is called. When `rag_query()` runs, it creates a trace. When `rag_query` calls `vector_store.search()` (also decorated), that becomes a *child* span. You get the trace tree for free — no manual span arithmetic. The manual `get_langfuse().generation(...)` call logs the LLM call with its tokens/cost as a *generation* node (richer than a span). Both approaches are valid; you'll see both in LangFuse dashboards in production codebases.
+> **What is `@observe`?** It's a Langfuse decorator that automatically creates a span when the function is called. When `rag_query()` runs, it creates a trace. When `rag_query` calls `vector_store.search()` (also decorated), that becomes a *child* span. You get the trace tree for free — no manual span arithmetic. Wrap the LLM call in `start_as_current_observation(as_type="generation", …)` for a *generation* node (model + tokens). Both approaches are valid; you'll see both in Langfuse dashboards in production codebases.
 
-> **Pitfall — `langfuse_context` only works inside an observed call.** If you call `langfuse_context.update_current_trace(...)` from a function that *isn't* decorated with `@observe`, you'll get an error or a no-op. The decorator establishes the trace context; everything called beneath it inherits it.
+> **Pitfall — updates only work inside an observed call.** `update_current_span` / `set_current_trace_io` need an active observation context from `@observe` or `start_as_current_observation`. Outside that context they no-op or mis-attach.
+>
+> **Graph RAG:** out of scope for Phase 1. See `DESIGN.md` → Phase 3 optional extension. Keep retrieve behind an interface so a future graph-augmented retriever can swap in without rewriting generate/tracing.
 
 ### 4.6 Create a run script
 
@@ -1144,10 +1174,7 @@ Create `scripts/hello_rag_traced.py`:
 
 ```python
 """Hello-world RAG with LangFuse tracing."""
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.rag.pipeline import Embedder, InMemoryVectorStore, rag_query
 
@@ -1340,7 +1367,7 @@ The model registry and Langfuse tracing from this phase carry forward. **Nothing
 3. **Ollama model not found?** Run `ollama list` — if empty, `ollama pull llama3.2:3b`. The first pull is ~4.7 GB.
 4. **Embedding model download fails?** `sentence-transformers` pulls from HuggingFace. If blocked (corporate VPN, region), set `HF_ENDPOINT=https://hf-mirror.com` in your `.env`.
 5. **mypy errors from third-party stubs?** Run `mypy app/ --follow-imports=skip` if third-party stubs are missing. Common with newer packages — fixable in Phase 2 by adding `mypy` stubs or per-package overrides.
-6. **`langfuse_context` errors?** It only works inside a function decorated with `@observe`. Make sure every manual `langfuse_context.*` call happens beneath an `@observe`-decorated function in the call stack.
+6. **Span update errors / missing nested spans?** Manual `update_current_span` / `set_current_trace_io` only work inside `@observe` or `start_as_current_observation`. Nested `@observe` children must be called from within a parent observed function.
 7. **Cosine similarity returns `NaN`?** Check that `_vectors` isn't `None` and that no chunk is empty (zero-vector → divide-by-zero). Add a guard in `add_document` to skip empty chunks.
 
 ---

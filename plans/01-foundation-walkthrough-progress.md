@@ -7,8 +7,9 @@
 > Sample doc path is now `data/sample_docs/appliance_manual_excerpt.txt`.
 
 **Started:** 2026-07-11
-**Last session:** 2026-07-18 (Step 3 complete — ready for commit or Step 4)
-**Last commit:** `37665a8` — Implements config, providers base class, and groq provider
+**Last session:** 2026-07-18 (Step 4.5 in progress — chunked RAG; plans/DESIGN updated for SDK v4 + Graph RAG note)
+**Last commit:** `e947bb1` — Implements Ollama provider, and implements testing suite with Groq + Ollama tests
+**Handoff:** absorbed; `plans/01-foundation-HANDOFF.md` deleted
 
 ---
 
@@ -61,6 +62,7 @@
 - Tests: assert contract not `pong`; parametrize via indirect `set_default_provider` fixture.
 - `list_models`: shape only (list of non-empty str) — no specific model IDs; catalog churn ≠ adapter failure.
 - Handoff absorbed; deleted `plans/01-foundation-HANDOFF.md`.
+- Step 3 completed earlier same day; resumed at Step 4.1.
 
 ---
 
@@ -81,19 +83,29 @@
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 4.1 | Official Langfuse compose | ⬜ Not started | **Not** the old single-container YAML |
-| 4.2 | Langfuse API keys | ⬜ Not started | |
-| 4.3 | Smoke test | ⬜ Not started | |
-| 4.4 | Sample appliance excerpt | ⬜ Not started | `appliance_manual_excerpt.txt` (+ JP stub) |
-| 4.5 | RAG pipeline | ⬜ Not started | |
-| 4.6 | Run script | ⬜ Not started | E12 / drain filter questions |
+| 4.1 | Official Langfuse compose | ✅ Done | Official compose; secrets in `.env`; UI at :3000; headless NexusDoc org |
+| 4.2 | Langfuse API keys | ✅ Done | sk-lf / pk-lf in `.env`; HOST localhost:3000 |
+| 4.3 | Smoke test | ✅ Done | v4 SDK (`start_as_current_observation`); editable install later same session |
+| 4.4 | Sample appliance excerpt | ✅ Done | EN + JP stubs already in `data/sample_docs/` (scaffold) |
+| 4.5 | RAG pipeline | ✅ Done | SDK v4; no deprecated trace I/O; import verified |
+| 4.6 | Run script | 🔄 In progress | E12 / drain filter questions |
 | — | Verification | ⬜ Not started | |
 
 ---
 
 ## Pending Actions for Next Session
 
-1. Commit Step 2 + 3 work when ready (registry, Ollama, tests, enums)
-2. **Step 4** — Langfuse **official** compose (not obsolete single-service YAML)
-3. Optional later: Groq→Ollama retry/fallback; OpenRouter after POC
-4. Re-read `DESIGN.md` cut list before adding features
+1. **Finish Step 4.5–4.6** — traced hello-RAG (`app/rag/pipeline.py` + `scripts/hello_rag_traced.py`)
+2. Optional later: Groq→Ollama retry/fallback; OpenRouter after POC; Varlock hardening
+3. **Graph RAG:** optional after Phase 3 only — see `DESIGN.md` (not Phase 1)
+4. Unrelated local dirty file: `.pre-commit-config.yaml` — ignore unless asked
+5. Re-read `DESIGN.md` cut list before adding features
+
+### Session notes (2026-07-18 evening)
+
+- Step 4.1: Docker Desktop OK; official compose; `DATABASE_URL` must not include literal `<>` placeholders; S3 secrets must equal `MINIO_ROOT_PASSWORD`.
+- Step 4.3: langfuse 4.14 — use `start_as_current_observation` + `flush()`; no `.trace()`.
+- Editable package: hatchling + `packages = ["app"]`; `uv sync --extra dev` — scripts import `app` without PYTHONPATH.
+- Varlock deferred until after Phase 1 / observability works.
+- Plans + `DESIGN.md` updated for SDK v4 + Graph RAG extension note (after Phase 3).
+- Step 4.5: walking pipeline in chunks (imports/client → chunk_text → …).

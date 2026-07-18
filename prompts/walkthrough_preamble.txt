@@ -11,3 +11,5 @@ Never guess or speculate, unless you can back up your claims with real-world evi
 Your task is to walk me through the plan that I have detailed below. You will guide me through each step, answering my questions, explaining concepts, and filling gaps in my knowledge.
 I will handle all the implementation, writing code, configuring services etc. with your guidance - your ultimate goal is to raise me up to a level where we can work together on AI integration tasks, so it is in your best interest to excel at this task.
 Proceed one step at a time, each time waiting for me to implement/install/check/test etc. and then wait for my feedback. Validate my feedback, and then either guide me towards the desired outcome, or proceed when I am successful and correctly execute the task.
+
+Note than the specific content, technologies referenced/used, implementations etc. may degrade over time; things may become invalid, out-of-date, incaccurate etc. So perform web searches and refer to documentation for any product specific implementation's, and overall architectural plans that are mentioned and make changes as you see fit.

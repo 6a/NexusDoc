@@ -41,7 +41,7 @@ NexusDoc helps a support desk answer from product manuals instead of hunting thr
 | Hybrid retrieval | pgvector dense (**bge-m3** or nomic-embed-text-v2) + sparse → **bge-reranker-v2-m3** |
 | Pipeline | **Single LangGraph (or linear) graph:** retrieve → generate (cited QA) → optional summarize → validate citations — **not** a multi-agent supervisor zoo |
 | Evaluation | **RAGAS** (or DeepEval if CI is easier): faithfulness, context recall, answer relevancy; **15 curated EN+JP cases**; CI gate |
-| Observability | **Langfuse** self-hosted via **official** docker compose (web + worker + Postgres + ClickHouse + Redis + MinIO) |
+| Observability | **Langfuse** self-hosted via **official** docker compose (web + worker + Postgres + ClickHouse + Redis + MinIO); instrument with **Python SDK v3+** (`observe`, `start_as_current_observation`) |
 | Model access | Provider registry: **Groq** (public/demo primary) + **Ollama on RTX 5080** (self-host) + OpenRouter only after **$10** credits if needed |
 | Deploy | App on **Hetzner** (~€4–6/mo) calling Groq + Supabase; local Ollama stays on the workstation |
 
@@ -55,9 +55,9 @@ NexusDoc helps a support desk answer from product manuals instead of hunting thr
 | Colab / rented GPU vLLM as the “deployment story” | RTX 5080 (Blackwell) + vLLM is a source-build landmine; Ollama is the honest self-host path |
 | arXiv / RFC / SEC domains | Wrong story for Japan support-desk FDE |
 | VLM / OCR pipeline / Prefect / TTS | Out of scope for ~45h |
-| Streamlit polish | Vibe-code a usable UI; frontend is not the learning goal |
+| Graph RAG before hybrid+evals | Premature; optional after Phase 3 only — see roadmap note |
 
-**Post-Sept optional:** vLLM on 5080 via WSL2 build-from-source; OCR pass; Redis cache; real Guardrails; tool-calling into a ticketing API.
+**Post-Sept optional:** vLLM on 5080 via WSL2 build-from-source; OCR pass; Redis cache; real Guardrails; tool-calling into a ticketing API; **Graph RAG** (see roadmap note below — only after hybrid vector RAG is solid).
 
 ---
 
@@ -221,10 +221,14 @@ Phase 9 (~2h)  : UI polish — Streamlit chat + citations (vibe-coded, timebox h
 
 ### Phase 1 — Foundation (~5h)
 
-- Repo: `uv`, `pyproject.toml`, pre-commit, `.env.example`
-- Registry: Groq + Ollama; **retry + 429 fallback**
-- Langfuse: **copy official docker-compose** (not a single-container hack)
-- Hello-world traced RAG on one sample manual excerpt
+- Repo: `uv`, `pyproject.toml` (**editable install** so `scripts/` can `import app`), pre-commit, `.env.example`
+- Registry: Groq + Ollama; **retry + 429 fallback** (may still be deferred until after hello-RAG)
+- Langfuse: **official docker-compose** (Postgres + ClickHouse + Redis + MinIO + web + worker) — not a single-container hack
+- Langfuse **Python SDK v3+** (verified against installed package; do not use removed APIs):
+  - Smoke: `start_as_current_observation` + `flush()` (not `.trace()`)
+  - App tracing: `from langfuse import observe, propagate_attributes` (not `langfuse.decorators`)
+  - Generations: `start_as_current_observation(as_type="generation", …)` (not `.generation()` on a legacy trace)
+- Hello-world traced RAG on one sample manual excerpt (`data/sample_docs/appliance_manual_excerpt.txt` + JP stub)
 - **Deliverable:** one traced, cited-ish answer from an in-memory or single-doc store
 
 ### Phase 2 — Ingestion (~6h)
@@ -240,9 +244,20 @@ Phase 9 (~2h)  : UI polish — Streamlit chat + citations (vibe-coded, timebox h
 - Citation plumbing (chunk → file → page)
 - **Deliverable:** cited hybrid answers on real manuals
 
+#### Optional extension — Graph RAG (after Phase 3, not a core phase)
+
+**Do not** insert Graph RAG between Phase 1–3 or replace hybrid retrieval. Ship **vector (+ hybrid) RAG with citations** first.
+
+**When it earns a slot:** multi-hop manual questions where edges matter more than chunk similarity alone — e.g. error code → linked procedure § → shared part number → safety note across pages/languages.
+
+**How it would fit:** as a **retriever plugin** behind the same pipeline interface (`retrieve → generate → validate`), not a second product. Typical shape: entity/relation extract at ingest → graph store (e.g. Neo4j / Postgres recursive / lightweight NetworkX for demos) → graph-augmented or hybrid graph+vector retrieval → same Langfuse-traced generate path.
+
+**Budget:** Post-Sept / stretch only unless a golden-set failure mode clearly needs multi-hop structure. Prefer documenting the miss in ADR-003 over boiling the ocean before evals (Phase 5).
+
 ### Phase 4 — Pipeline (~4h)
 
-- One graph/pipeline: retrieve → generate → validate citations present
+- One graph/pipeline: retrieve → generate → validate citations present  
+  (**“graph” here = LangGraph / linear control flow**, not Graph RAG)
 - Optional summarize node (same graph, not a second “agent”)
 - Typed state, timeouts, clear errors
 - **Deliverable:** end-to-end Q&A on a real error-code / procedure query
