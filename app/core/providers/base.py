@@ -7,9 +7,18 @@ Downstream code only imports BaseProvider - never a concrete provider implementa
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Literal
+from enum import StrEnum
 
-Role = Literal["system", "user", "assistant"]
+
+class Role(StrEnum):
+    """
+    Enum for all supported message roles.
+    """
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
 
 @dataclass
 class ChatMessage:
@@ -29,7 +38,7 @@ class CompletionResult:
 
     content: str
     model: str
-    usage: dict[str, int] = field(default_factory=dict) # prompt_tokens, completion_tokens, total_tokens
+    usage: dict[str, int] = field(default_factory=dict)  # prompt_tokens, completion_tokens, total_tokens
 
 
 class BaseProvider(ABC):
@@ -47,7 +56,7 @@ class BaseProvider(ABC):
     @abstractmethod
     def list_models(self) -> list[str]:
         """
-        Returns available model ID's for this provider.
+        Returns the ID's of the models that are available for this provider.
         """
         ...
 

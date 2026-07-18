@@ -7,8 +7,8 @@
 > Sample doc path is now `data/sample_docs/appliance_manual_excerpt.txt`.
 
 **Started:** 2026-07-11
-**Last session:** 2026-07-12
-**Last commit:** `2d3b290` — design + walkthrough refresh (Step 2 work **uncommitted**)
+**Last session:** 2026-07-18 (Step 3 complete — ready for commit or Step 4)
+**Last commit:** `37665a8` — Implements config, providers base class, and groq provider
 
 ---
 
@@ -43,10 +43,10 @@
 | 2.4 | `app/core/providers/base.py` | ✅ Done | `Role = Literal[...]`, `ChatMessage`, `CompletionResult`, `BaseProvider`; `dict[str, int]` for usage |
 | 2.5 | `app/core/providers/groq_provider.py` | ✅ Done | mypy passes; manual smoke test (`pong`) OK |
 | — | `app/core/providers/messages.py` | ✅ Done | Shared `to_chat_message_params()`; vendor-neutral `ChatMessageParam` |
-| 2.6 | `app/core/model_registry.py` | ⬜ Not started | **Next up** |
-| 2.7 | Tests | ⬜ Not started | Integration smoke: assert contract/shape, not model quality |
+| 2.6 | `app/core/model_registry.py` | ✅ Done | Lazy singleton; `match` on `ProviderName`; Ollama/OpenRouter commented |
+| 2.7 | Tests | ✅ Done | Contract/shape asserts; `ProviderName`/`Role` enums; indirect fixture; unknown/empty cases |
 
-**Step 2 in progress** (~70% — registry + tests remain).
+**Step 2 complete.**
 
 ### Session notes (2026-07-12)
 
@@ -55,16 +55,25 @@
 - PowerShell `python -c`: use double-outer / single-inner quotes; prefer `scripts/*.py` for multi-line.
 - Provider smoke tests: worth adding in 2.7; skip in CI without key; model regressions → Phase 5 evals.
 
+### Session notes (2026-07-18)
+
+- Added `ProviderName` (`definitions.py`) and `Role` (`StrEnum` in `base.py`); Settings types `default_provider` as `ProviderName`.
+- Tests: assert contract not `pong`; parametrize via indirect `set_default_provider` fixture.
+- `list_models`: shape only (list of non-empty str) — no specific model IDs; catalog churn ≠ adapter failure.
+- Handoff absorbed; deleted `plans/01-foundation-HANDOFF.md`.
+
 ---
 
 ## Step 3 — Ollama (+ optional OpenRouter) (~20 min)
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 3.1 | `ollama_provider.py` | ⬜ Not started | **Priority** — RTX 5080 self-host path |
+| 3.1 | `ollama_provider.py` | ✅ Done | `DEFAULT_MODEL`, `num_predict`, `is_available()`; SDK `model` not `name` |
 | 3.2 | `openrouter_provider.py` | ⬜ Deferred | Only after POC + optional $10 credits |
-| 3.3 | Update registry | ⬜ Not started | Groq + Ollama; retry/fallback |
-| 3.4 | Test Groq + Ollama | ⬜ Not started | Pull e.g. `ollama pull qwen2.5:7b` |
+| 3.3 | Update registry | ✅ Done | `ProviderName.OLLAMA` wired; retry/fallback deferred |
+| 3.4 | Test Groq + Ollama | ✅ Done | Shared `_PROVIDER_PARAMS`; 6 passed |
+
+**Step 3 complete** (OpenRouter + retry/fallback still deferred).
 
 ---
 
@@ -84,9 +93,7 @@
 
 ## Pending Actions for Next Session
 
-1. **Step 2.6** — implement `app/core/model_registry.py` (`get_provider`, `reset_provider`)
-2. **Step 2.7** — `tests/test_model_registry.py` (integration smoke, `skipif` no key; contract not `pong`)
-3. Commit Step 2 work when ready (uncommitted: `config.py`, `base.py`, `messages.py`, `groq_provider.py`, `.env.example`)
-4. Pull Ollama model for 5080 before Step 3: `ollama pull qwen2.5:7b`
-5. When reaching Step 4: copy Langfuse **official** `docker-compose.yml` — do not use obsolete single-service config
-6. Re-read `DESIGN.md` cut list before adding features
+1. Commit Step 2 + 3 work when ready (registry, Ollama, tests, enums)
+2. **Step 4** — Langfuse **official** compose (not obsolete single-service YAML)
+3. Optional later: Groq→Ollama retry/fallback; OpenRouter after POC
+4. Re-read `DESIGN.md` cut list before adding features

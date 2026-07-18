@@ -4,8 +4,10 @@ Application configuration, implemented using Pydantic.
 Reads from the .env file automatically. Every setting has a default that works for local development with free tier providers.
 """
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.providers.definitions import ProviderName
 
 
 class Settings(BaseSettings):
@@ -15,9 +17,9 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", repr=False)
     openrouter_api_key: str = Field(default="", repr=False)
     ollama_host: str = Field(default="http://localhost:11434", repr=False)
-    
+
     # Default provider: groq | ollama | openrouter
-    default_provider: str = Field(default="groq")
+    default_provider: ProviderName = ProviderName.GROQ
 
     # Observability
     langfuse_secret_key: str = Field(default="", repr=False)
@@ -30,5 +32,6 @@ class Settings(BaseSettings):
 
     # Application
     log_level: str = Field(default="INFO")
+
 
 settings = Settings()
