@@ -7,9 +7,9 @@
 > Sample doc path is now `data/sample_docs/appliance_manual_excerpt.txt`.
 
 **Started:** 2026-07-11
-**Last session:** 2026-07-18 (Step 4.5 in progress — chunked RAG; plans/DESIGN updated for SDK v4 + Graph RAG note)
-**Last commit:** `e947bb1` — Implements Ollama provider, and implements testing suite with Groq + Ollama tests
-**Handoff:** absorbed; `plans/01-foundation-HANDOFF.md` deleted
+**Last session:** 2026-07-18 (Step 4 complete end-to-end; Phase 1 verify still open)
+**Last commit:** `1a6c8c4` — Implements basic RAG pipeline, LangFuse integration, and tests
+**Handoff:** `plans/01-foundation-HANDOFF.md` (temporary — delete after next session resumes)
 
 ---
 
@@ -21,10 +21,10 @@
 | 1.2 | `pyproject.toml` (full) | ✅ Done | Walked through all 6 sections line-by-line |
 | 1.2.1 | `.python-version` | ✅ Done | Pinned to `3.13` (best mix of speed + wheel support) |
 | 1.3 | `uv venv` + deps | ✅ Done | Python 3.13.6, all deps installed |
-| 1.4a | `.env.example` | ✅ Done | Standard names (`GROQ_API_KEY`, etc.) |
-| 1.4b | `.env` | ✅ Done | Project-local only (`DEFAULT_PROVIDER`, `OLLAMA_HOST`, `LOG_LEVEL`); API keys in **OS env** |
+| 1.4a | `.env.example` | ✅ Done | Updated 2026-07-18 for Langfuse compose + HF_TOKEN |
+| 1.4b | `.env` | ✅ Done | Langfuse compose secrets + SDK keys + HF_TOKEN; Groq often OS env |
 | 1.5 | `.pre-commit-config.yaml` | ✅ Done | Created, `pre-commit install` ran |
-| 1.6 | Directory structure | ✅ Done | `app/core/providers/`, `tests/`, `scripts/`, `data/sample_docs/` |
+| 1.6 | Directory structure | ✅ Done | `app/core/providers/`, `app/rag/`, `tests/`, `scripts/`, `data/sample_docs/` |
 | — | `ruff check .` | ✅ Passes | |
 | — | `mypy app/` | ✅ Passes | |
 | — | `pyright .` | ✅ Passes | Via `cmd /c pyright .` (shazam hook fixed) |
@@ -40,12 +40,12 @@
 | --- | ------ | -------- | ------- |
 | 2.1 | Concept explained | ✅ Done | Strategy pattern, provider abstraction; `@dataclass`, `ABC`, decorators |
 | 2.2 | Design reviewed | ✅ Done | Groq + Ollama first; OpenRouter deferred; OS env for API keys OK |
-| 2.3 | `app/core/config.py` | ✅ Done | Pydantic Settings + `Field(repr=False)` on secrets/hosts; `uv sync --extra dev` for mypy |
-| 2.4 | `app/core/providers/base.py` | ✅ Done | `Role = Literal[...]`, `ChatMessage`, `CompletionResult`, `BaseProvider`; `dict[str, int]` for usage |
-| 2.5 | `app/core/providers/groq_provider.py` | ✅ Done | mypy passes; manual smoke test (`pong`) OK |
-| — | `app/core/providers/messages.py` | ✅ Done | Shared `to_chat_message_params()`; vendor-neutral `ChatMessageParam` |
-| 2.6 | `app/core/model_registry.py` | ✅ Done | Lazy singleton; `match` on `ProviderName`; Ollama/OpenRouter commented |
-| 2.7 | Tests | ✅ Done | Contract/shape asserts; `ProviderName`/`Role` enums; indirect fixture; unknown/empty cases |
+| 2.3 | `app/core/config.py` | ✅ Done | Pydantic Settings + `Field(repr=False)` on secrets/hosts; `load_dotenv()` at top |
+| 2.4 | `app/core/providers/base.py` | ✅ Done | `Role` StrEnum, `ChatMessage`, `CompletionResult`, `BaseProvider` |
+| 2.5 | `app/core/providers/groq_provider.py` | ✅ Done | usage keys: `prompt_tokens` / `completion_tokens` / `total_tokens` |
+| — | `app/core/providers/messages.py` | ✅ Done | Shared `to_chat_message_params()` |
+| 2.6 | `app/core/model_registry.py` | ✅ Done | Lazy singleton; `match` on `ProviderName` |
+| 2.7 | Tests | ✅ Done | Contract/shape asserts; 6 passed (Groq + Ollama) |
 
 **Step 2 complete.**
 
@@ -54,15 +54,12 @@
 - Groq SDK `usage` is `Optional` — assign `usage = response.usage` for mypy narrowing.
 - Cast `to_chat_message_params()` → `list[ChatCompletionMessageParam]` at provider boundary.
 - PowerShell `python -c`: use double-outer / single-inner quotes; prefer `scripts/*.py` for multi-line.
-- Provider smoke tests: worth adding in 2.7; skip in CI without key; model regressions → Phase 5 evals.
 
 ### Session notes (2026-07-18)
 
-- Added `ProviderName` (`definitions.py`) and `Role` (`StrEnum` in `base.py`); Settings types `default_provider` as `ProviderName`.
-- Tests: assert contract not `pong`; parametrize via indirect `set_default_provider` fixture.
-- `list_models`: shape only (list of non-empty str) — no specific model IDs; catalog churn ≠ adapter failure.
-- Handoff absorbed; deleted `plans/01-foundation-HANDOFF.md`.
-- Step 3 completed earlier same day; resumed at Step 4.1.
+- Added `ProviderName` (`definitions.py`) and `Role` (`StrEnum` in `base.py`).
+- Tests: contract not `pong`; `list_models` shape only.
+- Step 3 completed; Step 4 Langfuse + RAG completed same day (evening).
 
 ---
 
@@ -83,29 +80,33 @@
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 4.1 | Official Langfuse compose | ✅ Done | Official compose; secrets in `.env`; UI at :3000; headless NexusDoc org |
-| 4.2 | Langfuse API keys | ✅ Done | sk-lf / pk-lf in `.env`; HOST localhost:3000 |
-| 4.3 | Smoke test | ✅ Done | v4 SDK (`start_as_current_observation`); editable install later same session |
-| 4.4 | Sample appliance excerpt | ✅ Done | EN + JP stubs already in `data/sample_docs/` (scaffold) |
-| 4.5 | RAG pipeline | ✅ Done | SDK v4; no deprecated trace I/O; import verified |
-| 4.6 | Run script | 🔄 In progress | E12 / drain filter questions |
-| — | Verification | ⬜ Not started | |
+| 4.1 | Official Langfuse compose | ✅ Done | Official multi-service compose; UI :3000; headless NexusDoc |
+| 4.2 | Langfuse API keys | ✅ Done | `LANGFUSE_SECRET_KEY` / `PUBLIC_KEY` / `BASE_URL` or `HOST` |
+| 4.3 | Smoke test | ✅ Done | `scripts/test_langfuse.py`; SDK v4 APIs |
+| 4.4 | Sample appliance excerpt | ✅ Done | EN + JP in `data/sample_docs/` |
+| 4.5 | RAG pipeline | ✅ Done | `app/rag/pipeline.py` — chunk → embed → cosine search → traced generate |
+| 4.6 | Run script | ✅ Done | `scripts/test_rag.py` (E12 / drain / E27); traces in Langfuse UI |
+| — | Phase 1 verify script | ⬜ **NEXT** | Walkthrough `scripts/phase1_verify.py` — adapt to SDK v4 if stale |
+
+**Step 4 complete** (live RAG + traces verified). Phase 1 final checklist still open.
 
 ---
 
 ## Pending Actions for Next Session
 
-1. **Finish Step 4.5–4.6** — traced hello-RAG (`app/rag/pipeline.py` + `scripts/hello_rag_traced.py`)
-2. Optional later: Groq→Ollama retry/fallback; OpenRouter after POC; Varlock hardening
-3. **Graph RAG:** optional after Phase 3 only — see `DESIGN.md` (not Phase 1)
-4. Unrelated local dirty file: `.pre-commit-config.yaml` — ignore unless asked
-5. Re-read `DESIGN.md` cut list before adding features
+1. **Phase 1 Final Verification** — create/run `scripts/phase1_verify.py` per walkthrough; **re-check Langfuse SDK v4** (no `langfuse.decorators`, no `set_current_trace_io`).
+2. Optional: mark Phase 1 done in walkthrough checklist; then start Phase 2 per `DESIGN.md`.
+3. Deferred: OpenRouter; Groq→Ollama retry/fallback; Varlock; Graph RAG (after Phase 3 only).
+4. Re-read `DESIGN.md` cut list before adding features.
 
-### Session notes (2026-07-18 evening)
+### Session notes (2026-07-18 evening) — carry forward
 
-- Step 4.1: Docker Desktop OK; official compose; `DATABASE_URL` must not include literal `<>` placeholders; S3 secrets must equal `MINIO_ROOT_PASSWORD`.
-- Step 4.3: langfuse 4.14 — use `start_as_current_observation` + `flush()`; no `.trace()`.
-- Editable package: hatchling + `packages = ["app"]`; `uv sync --extra dev` — scripts import `app` without PYTHONPATH.
-- Varlock deferred until after Phase 1 / observability works.
-- Plans + `DESIGN.md` updated for SDK v4 + Graph RAG extension note (after Phase 3).
-- Step 4.5: walking pipeline in chunks (imports/client → chunk_text → …).
+- **Langfuse compose:** official only; `DATABASE_URL` no literal `<>`; S3 secrets == `MINIO_ROOT_PASSWORD`.
+- **langfuse 4.x:** `observe` / `propagate_attributes` from `langfuse`; `start_as_current_observation(as_type="generation")`; I/O on root span via `update_current_span` — not deprecated `set_current_trace_io`.
+- **Client init:** eager `get_langfuse()` at end of `pipeline.py` so `@observe` hits keyed singleton (Settings ≠ `os.environ` alone).
+- **`load_dotenv()`** in `app/core/config.py` before `Settings()` — publishes `.env` to process for HF Hub / libs that read env.
+- **Editable install:** hatchling + `packages = ["app"]` in `pyproject.toml`.
+- **Usage keys:** provider dict uses `prompt_tokens` / `completion_tokens`; Langfuse `usage_details` uses `input_tokens` / `output_tokens`.
+- **Torch:** CPU-only (`+cpu`); GPU embed deferred. HF: optional `HF_TOKEN` (Read).
+- **Varlock / Graph RAG:** deferred (see DESIGN).
+- **Do not invent** alternate Langfuse compose or leave `...` stubs for user to copy.
