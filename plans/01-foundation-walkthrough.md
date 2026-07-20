@@ -115,7 +115,7 @@ The "retrieve" step uses a **vector database** — it stores chunks of text as m
 "democracy"  → [-0.89, 0.56, 0.03, ...]   ← far from "cat"
 ```
 
-For Phase 1, you'll do a minimal version: one document, **in-memory** vectors (no pgvector yet — that's Phase 2), just to prove the pipeline works end-to-end. You'll use `all-MiniLM-L6-v2` (80 MB, runs on CPU) in Phase 1 and upgrade to `bge-m3` (the production model in the design) in Phase 3.
+For Phase 1, you'll do a minimal version: one document, **in-memory** vectors (no pgvector yet — that's Phase 2), just to prove the pipeline works end-to-end. You'll use `all-MiniLM-L6-v2` (80 MB, runs on CPU) in Phase 1. Phase 2 switches to `bge-m3` @ 1024d when you create the pgvector schema (dimension lock). Phase 3 adds hybrid sparse retrieval + rerank on those dense rows — it does **not** introduce bge-m3 for the first time.
 
 ### 3. What is observability, and why LangFuse? (entirely new to you)
 
@@ -1028,7 +1028,7 @@ class Embedder:
     """Lightweight local embedding model.
 
     all-MiniLM-L6-v2: 80 MB, 384 dimensions, runs on CPU.
-    Good enough for Phase 1. Upgrade to bge-m3 (1024-dim) in Phase 3.
+    Good enough for Phase 1. Phase 2 switches to bge-m3 (1024-dim) for pgvector.
     """
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
@@ -1350,11 +1350,11 @@ This isn't just a checklist — these are the skills you now have, all directly 
 
 ## What's Next (Phase 2 Preview)
 
-In Phase 2 you'll ingest **real EN+JP appliance manuals** (see `DESIGN.md`):
+Follow **[`02-ingestion-walkthrough.md`](02-ingestion-walkthrough.md)** (progress: [`02-ingestion-walkthrough-progress.md`](02-ingestion-walkthrough-progress.md)):
 
 - Curate 15–30 official manufacturer PDFs
 - **PyMuPDF** parse → page metadata; flag empty OCR pages
-- **pgvector on Supabase** with HNSW indexing
+- **pgvector on Supabase** with HNSW indexing (`bge-m3` @ 1024d)
 
 The model registry and Langfuse tracing from this phase carry forward. **Nothing here is thrown away** — only the domain and later-phase cuts in `DESIGN.md` changed.
 

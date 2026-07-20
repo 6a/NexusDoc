@@ -95,7 +95,7 @@
 ## Pending Actions for Next Session
 
 1. Optional: confirm Langfuse UI + Ollama provider switch; `ruff check .` / `mypy app/`.
-2. Mark Phase 1 complete; start Phase 2 per `DESIGN.md`.
+2. Mark Phase 1 complete; start Phase 2: [`02-ingestion-walkthrough.md`](02-ingestion-walkthrough.md) + [`02-ingestion-walkthrough-progress.md`](02-ingestion-walkthrough-progress.md).
 3. Deferred: OpenRouter; Groq→Ollama retry/fallback; Varlock; Graph RAG (after Phase 3 only).
 4. Re-read `DESIGN.md` cut list before adding features.
 

@@ -1,7 +1,8 @@
 """
 Minimal RAG pipeline for phase 1 of the project.
 
-Simple by design: In-memory, no pgvector, no reranker - we will add these in phases 2-3.
+Simple by design: In-memory, no pgvector, no reranker.
+Phase 2 adds pgvector + dense bge-m3 ingest; Phase 3 adds hybrid retrieve + rerank.
 The goal here is to prove the full pipeline works end-to-end with tracing, so every future phase inherits working observability.
 """
 
@@ -88,7 +89,7 @@ class Embedder:
     The embedding model
 
     Currently using a lightweight local model: all-MiniLM-L6-v2 - ~80MB, 384 dimensions, runs on CPU.
-    TODO: Switch to a more powerful model (bge-m3 etc.), and/or configure it to run on GPU.
+    TODO: Phase 2 switches ingest embeddings to bge-m3 (1024-dim) for pgvector; optional GPU later.
     """
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:

@@ -208,8 +208,8 @@ Compressed from the earlier 12-phase fantasy. Buffer ~5h for interview prep / re
 
 ```
 Phase 1 (~5h)  : Foundation — uv, registry (Groq+Ollama), Langfuse official compose, traced hello-RAG
-Phase 2 (~6h)  : Corpus — 15–30 EN+JP manuals, PyMuPDF ingest, pgvector schema, empty-page handling
-Phase 3 (~6h)  : Retrieval — bge-m3 + hybrid + rerank + citations
+Phase 2 (~6h)  : Corpus — 15–30 EN+JP manuals, PyMuPDF ingest, bge-m3 dense → pgvector (HNSW), empty-page handling
+Phase 3 (~6h)  : Retrieval — hybrid (dense + sparse) + rerank + citations on Phase 2 rows
 Phase 4 (~4h)  : Pipeline — single retrieve→generate→(optional summary) graph; structured citations
 Phase 5 (~6h)  : Eval — 15 golden cases (EN+JP) + RAGAS/DeepEval + CI gate
 Phase 6 (~3h)  : Local serve — Ollama on 5080 wired in registry; smoke vs Groq
@@ -235,12 +235,12 @@ Phase 9 (~2h)  : UI polish — Streamlit chat + citations (vibe-coded, timebox h
 
 - Curate 15–30 manuals (EN+JP); document sources + licenses in `data/README.md`
 - PyMuPDF → chunks + page + language metadata
-- pgvector upsert (HNSW); flag near-empty pages
+- Dense embed with **bge-m3** (`vector(1024)`) + pgvector upsert (HNSW); flag near-empty pages
 - **Deliverable:** CLI ingests EN and JP manuals into Supabase
 
 ### Phase 3 — Hybrid retrieval (~6h)
 
-- Local embeddings + sparse + rerank
+- Query-time dense retrieve on Phase 2 rows + sparse channel + rerank (`bge-reranker-v2-m3`)
 - Citation plumbing (chunk → file → page)
 - **Deliverable:** cited hybrid answers on real manuals
 
