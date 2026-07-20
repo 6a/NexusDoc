@@ -267,6 +267,7 @@ def rag_query(query: str, vector_store: InMemoryVectorStore, top_k: int = 3) -> 
             answer=result.content,
             sources=[{"chunk": chunk[:200] + "...", "score": round(score, 4)} for chunk, score in results],
             usage=result.usage,
+            model=result.model,
             provider=provider.provider_name,
             trace_id=trace_id,
         )

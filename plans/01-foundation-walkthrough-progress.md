@@ -7,9 +7,9 @@
 > Sample doc path is now `data/sample_docs/appliance_manual_excerpt.txt`.
 
 **Started:** 2026-07-11
-**Last session:** 2026-07-18 (Step 4 complete end-to-end; Phase 1 verify still open)
-**Last commit:** `1a6c8c4` — Implements basic RAG pipeline, LangFuse integration, and tests
-**Handoff:** `plans/01-foundation-HANDOFF.md` (temporary — delete after next session resumes)
+**Last session:** 2026-07-20 (Phase 1 Final Verification script green)
+**Last commit:** (pending) Phase 1 e2e verify + script utils
+**Handoff:** absorbed and deleted
 
 ---
 
@@ -86,16 +86,16 @@
 | 4.4 | Sample appliance excerpt | ✅ Done | EN + JP in `data/sample_docs/` |
 | 4.5 | RAG pipeline | ✅ Done | `app/rag/pipeline.py` — chunk → embed → cosine search → traced generate |
 | 4.6 | Run script | ✅ Done | `scripts/test_rag.py` (E12 / drain / E27); traces in Langfuse UI |
-| — | Phase 1 verify script | ⬜ **NEXT** | Walkthrough `scripts/phase1_verify.py` — adapt to SDK v4 if stale |
+| 4.7 | Phase 1 verify script | ✅ Done | `scripts/verify_e2e_phase1.py` + `scripts/utils.py`; SDK v4 / dataclass-aware |
 
-**Step 4 complete** (live RAG + traces verified). Phase 1 final checklist still open.
+**Step 4 complete.** Phase 1 e2e verify script passes (Groq). Optional checklist: Ollama switch, ruff/mypy, commit.
 
 ---
 
 ## Pending Actions for Next Session
 
-1. **Phase 1 Final Verification** — create/run `scripts/phase1_verify.py` per walkthrough; **re-check Langfuse SDK v4** (no `langfuse.decorators`, no `set_current_trace_io`).
-2. Optional: mark Phase 1 done in walkthrough checklist; then start Phase 2 per `DESIGN.md`.
+1. Optional: confirm Langfuse UI + Ollama provider switch; `ruff check .` / `mypy app/`.
+2. Mark Phase 1 complete; start Phase 2 per `DESIGN.md`.
 3. Deferred: OpenRouter; Groq→Ollama retry/fallback; Varlock; Graph RAG (after Phase 3 only).
 4. Re-read `DESIGN.md` cut list before adding features.
 
