@@ -8,9 +8,9 @@
 >
 > **Prerequisite:** Phase 1 foundation complete ([`01-foundation-walkthrough-progress.md`](01-foundation-walkthrough-progress.md)).
 
-**Started:** (fill in)
-**Last session:** (fill in)
-**Last commit:** (fill in)
+**Started:** 2026-07-20
+**Last session:** 2026-07-20 (Steps 1–2 complete; resume at Step 3)
+**Last commit:** none this session (leave working tree as-is)
 
 ---
 
@@ -18,12 +18,12 @@
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 1.1 | Corpus rules understood | ⬜ | Official OEM downloads; URL + date in catalog |
-| 1.2 | `data/manuals/{en,ja}/` + gitignore PDFs | ⬜ | |
-| 1.3 | ≥2 EN + ≥2 JP PDFs downloaded | ⬜ | Scale toward 15–30 after CLI works |
-| 1.4 | `data/README.md` catalog | ⬜ | source URL, accessed date, notes |
+| 1.1 | Corpus rules understood | ✅ | Official OEM downloads; URL + date in catalog |
+| 1.2 | `data/manuals/{en,ja}/` + gitignore PDFs | ✅ | PDF-only ignore; `.gitkeep` present |
+| 1.3 | ≥2 EN + ≥2 JP PDFs downloaded | ✅ | 4 EN + 3 JP |
+| 1.4 | `data/README.md` catalog | ✅ | URLs, dates, notes, license, ingest gaps |
 
-**Step 1 complete:** ⬜
+**Step 1 complete:** ✅
 
 ---
 
@@ -31,12 +31,12 @@
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 2.1 | Add `pymupdf`, `psycopg[binary]`, `pgvector` | ⬜ | |
-| 2.2 | Extend `Settings` (`supabase_db_url`, embed/chunk knobs) | ⬜ | |
-| 2.3 | `.env.example` + `.env` updated | ⬜ | Session pooler URI on Windows/IPv4 |
-| — | `psycopg.connect(settings.supabase_db_url)` smoke | ⬜ | |
+| 2.1 | Add `pymupdf`, `psycopg[binary]`, `pgvector` | ✅ | psycopg 3.3.4, pymupdf 1.28.0 |
+| 2.2 | Extend `Settings` (`supabase_db_url`, embed/chunk knobs) | ✅ | bge-m3 / 1024 / chunk 480·48 / empty≥40 |
+| 2.3 | `.env.example` + `.env` updated | ✅ | Session pooler; smoke `(1,)` |
+| — | `psycopg.connect(settings.supabase_db_url)` smoke | ✅ | |
 
-**Step 2 complete:** ⬜
+**Step 2 complete:** ✅
 
 ---
 
@@ -136,6 +136,13 @@
 
 ## Session notes
 
-### (date) —
+### 2026-07-20 — Steps 1–2
 
-- …
+- **Done:** Step 1 (corpus) + Step 2 (deps, Settings, env, DB smoke).
+- Corpus: 4 EN + 3 JP under `data/manuals/{en,ja}/`; catalog in `data/README.md` (URLs, dates, notes, license, ingest gaps). PDFs gitignored.
+- Deps: `pymupdf` 1.28.0, `psycopg` 3.3.4, `pgvector`. IDE must use `.\.venv\Scripts\python.exe`.
+- Config: `supabase_db_url` + ingest knobs in `Settings`; `.env` has session pooler URI + optional `SUPABASE_URL` / `sb_secret_…` service key.
+- Smoke: `psycopg.connect` → `(1,)`.
+- **Resume next:** Step 3 — enable pgvector, create `documents`/`chunks` (`vector(1024)`), HNSW, save `app/ingestion/sql/001_init.sql`.
+- **Git:** no commit this session; leave working tree uncommitted.
+- Notes: images/OCR out of scope; no framework over raw `psycopg` for ingest; catalog automation deferred.

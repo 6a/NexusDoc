@@ -9,3 +9,6 @@ __pycache__/
 .venv/
 .ruff_cache/
 .pi-subagents/
+
+# Don't include manuals - they are catalogued in data/README.md
+data/manuals/**/*.pdf

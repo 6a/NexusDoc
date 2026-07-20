@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     # Database
     supabase_url: str = Field(default="", repr=False)
     supabase_service_key: str = Field(default="", repr=False)
+    supabase_db_url: str = Field(default="", repr=False)
+
+    # Ingestion / embeddings
+    embedding_model: str = Field(default="BAAI/bge-m3")
+    embedding_dim: int = Field(default=1024)
+    empty_page_min_chars: int = Field(default=40)
+    chunk_size: int = Field(default=480)
+    chunk_overlap: int = Field(default=48)
 
     # Application
     log_level: str = Field(default="INFO")
