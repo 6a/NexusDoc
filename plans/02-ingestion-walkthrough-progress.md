@@ -9,7 +9,7 @@
 > **Prerequisite:** Phase 1 foundation complete ([`01-foundation-walkthrough-progress.md`](01-foundation-walkthrough-progress.md)).
 
 **Started:** 2026-07-20
-**Last session:** 2026-07-20 (Steps 1–2 complete; resume at Step 3)
+**Last session:** 2026-07-25 (Steps 1–4 complete; resume at Step 5)
 **Last commit:** none this session (leave working tree as-is)
 
 ---
@@ -44,12 +44,12 @@
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 3.1 | `create extension vector with schema extensions` | ⬜ | |
-| 3.2 | `documents` + `chunks` tables (`vector(1024)`) | ⬜ | |
-| 3.3 | HNSW `vector_cosine_ops` index | ⬜ | m=16, ef_construction=64 defaults OK |
-| 3.4 | SQL saved as `app/ingestion/sql/001_init.sql` | ⬜ | |
+| 3.1 | `create extension vector with schema extensions` | ✅ | pgvector 0.8.2 |
+| 3.2 | `documents` + `chunks` tables (`vector(1024)`) | ✅ | + `lang_code` enum; RLS on (no policies) |
+| 3.3 | HNSW `vector_cosine_ops` index | ✅ | m=16, ef_construction=64; + updated_at trigger |
+| 3.4 | SQL saved in-repo | ✅ | `app/ingestion/sql/001_init.sql` + `app/ingestion/sql/002_verify.sql` |
 
-**Step 3 complete:** ⬜
+**Step 3 complete:** ✅
 
 ---
 
@@ -57,13 +57,13 @@
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 4.1 | `app/ingestion/` package scaffold | ⬜ | |
-| 4.2 | `language.py` heuristic | ⬜ | folder prior OK for curated en/ja |
-| 4.3 | `pdf_parser.py` (`import pymupdf`, `get_text(sort=True)`) | ⬜ | |
-| 4.4 | Empty-page flag (`EMPTY_PAGE_MIN_CHARS`) | ⬜ | No OCR |
-| — | Smoke parse one EN + one JP PDF | ⬜ | |
+| 4.1 | `app/ingestion/` package scaffold | ✅ | `__init__.py` + `sql/` |
+| 4.2 | `language.py` heuristic | ✅ | `Language` StrEnum; path prior en/ja only |
+| 4.3 | `pdf_parser.py` (`import pymupdf`, `get_text(sort=True)`) | ✅ | |
+| 4.4 | Empty-page flag (`EMPTY_PAGE_MIN_CHARS`) | ✅ | forced 999999 → all empty |
+| — | Smoke parse one EN + one JP PDF | ✅ | LG 52/2 empty; Hitachi+Panasonic 0 empty |
 
-**Step 4 complete:** ⬜
+**Step 4 complete:** ✅
 
 ---
 
@@ -136,6 +136,13 @@
 
 ## Session notes
 
+### 2026-07-25 — Steps 3–4
+
+- **Step 3:** Schema + HNSW; `app/ingestion/sql/001_init.sql` + `002_verify.sql`. vector 0.8.2; `lang_code` enum; RLS on; `updated_at` trigger.
+- **Step 4:** `language.py` + `pdf_parser.py`. EN LG: 52 pages / 2 empty. JP Hitachi: 36/0 (catalog “maybe scanned” was wrong — born-digital). Panasonic: 63/0. Forced `min_chars=999999` → 52/52.
+- **Resume next:** Step 5 — page-aware chunking + JP separators.
+- **Git:** no commit this session unless asked.
+
 ### 2026-07-20 — Steps 1–2
 
 - **Done:** Step 1 (corpus) + Step 2 (deps, Settings, env, DB smoke).
@@ -143,6 +150,5 @@
 - Deps: `pymupdf` 1.28.0, `psycopg` 3.3.4, `pgvector`. IDE must use `.\.venv\Scripts\python.exe`.
 - Config: `supabase_db_url` + ingest knobs in `Settings`; `.env` has session pooler URI + optional `SUPABASE_URL` / `sb_secret_…` service key.
 - Smoke: `psycopg.connect` → `(1,)`.
-- **Resume next:** Step 3 — enable pgvector, create `documents`/`chunks` (`vector(1024)`), HNSW, save `app/ingestion/sql/001_init.sql`.
 - **Git:** no commit this session; leave working tree uncommitted.
 - Notes: images/OCR out of scope; no framework over raw `psycopg` for ingest; catalog automation deferred.

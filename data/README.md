@@ -13,7 +13,7 @@ Appliance / white-goods support manuals for RAG. **Source not distributed** - do
 | en-004 | en | LG | F4X7013T | 13kg AI Direct Drive Washing Machine Series 7 | `en/lg_f4x7013t_owners-manual.pdf` | [LINK](https://gscs-b2c.lge.com/open/downloadFile?fileId=D55kPHQYwrKCvT2zj2Scsw) | 2026-07-20 ||
 | ja-001 | ja | Panasonic | NE-BS5D-K | オーブンレンジ 定番グリルボタン搭載 26L | `ja/panasonic_ne-bs5d-k_torisetu.pdf` | [LINK](https://panasonic.jp/content/dam/panasonic/jp/ja/pim-assets/support/manual/000/000/003/583/864/000000003583864/NE-BS5D_F0016-14V0.pdf) |2026-07-20 | Latter half is recipes |
 | ja-002 | ja | Toshiba | TW-84GS5L | ZABOON 洗濯機・洗濯乾燥機 | `ja/toshiba_tw-84gs5l-torisetu.pdf` | [LINK](https://www.toshiba-living.jp/manual.pdf?no=101859&fw=1&pid=22422) | 2026-07-20 | First page load redirects to terms/consent gate |
-| ja-003 | ja | Hitachi | R-HWS47X | HWSタイプ R-HWS47X | `ja/hitachi_r-hws47x_torisetu.pdf` | [LINK](https://kadenfan.hitachi.co.jp/support/rei/item/docs/r_hws47x_b.pdf) | 2026-07-20 | May be partially scanned? |
+| ja-003 | ja | Hitachi | R-HWS47X | HWSタイプ R-HWS47X | `ja/hitachi_r-hws47x_torisetu.pdf` | [LINK](https://kadenfan.hitachi.co.jp/support/rei/item/docs/r_hws47x_b.pdf) | 2026-07-20 | |
 
 ## License
 Manufacturer-published support manuals, downloaded from official OEM sites for **personal portfolio / research** use only.
