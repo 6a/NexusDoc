@@ -4,10 +4,14 @@ Application configuration, implemented using Pydantic.
 Reads from the .env file automatically. Every setting has a default that works for local development with free tier providers.
 """
 
+from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.providers.definitions import ProviderName
+
+# Load the environment so that HF_TOKEN is available for the first call to SentenceTransformer
+load_dotenv()
 
 
 class Settings(BaseSettings):

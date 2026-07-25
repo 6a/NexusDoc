@@ -9,7 +9,7 @@
 > **Prerequisite:** Phase 1 foundation complete ([`01-foundation-walkthrough-progress.md`](01-foundation-walkthrough-progress.md)).
 
 **Started:** 2026-07-20
-**Last session:** 2026-07-25 (Steps 1–4 complete; resume at Step 5)
+**Last session:** 2026-07-25 (Steps 1–5 complete; resume at Step 6)
 **Last commit:** none this session (leave working tree as-is)
 
 ---
@@ -71,12 +71,12 @@
 
 | # | Task | Status | Notes |
 | --- | ------ | -------- | ------- |
-| 5.1 | `chunking.py` page-aware + JP separators | ⬜ | char size ~480 / overlap ~48 |
-| 5.2 | `DocumentChunk` with page_start/end + lang | ⬜ | |
-| 5.3 | Empty pages → zero chunks | ⬜ | |
-| — | Spot-check EN + JP chunk counts | ⬜ | |
+| 5.1 | `chunking.py` page-aware + JP separators | ✅ | recursive split + pack/overlap |
+| 5.2 | `DocumentChunk` with page_start/end + lang | ✅ | `language: Language`; page_start==page_end |
+| 5.3 | Empty pages → zero chunks | ✅ | skip `is_empty` |
+| — | Spot-check EN + JP chunk counts | ✅ | LG 263 chunks (2 empty); Panasonic 547 |
 
-**Step 5 complete:** ⬜
+**Step 5 complete:** ✅
 
 ---
 
@@ -140,7 +140,8 @@
 
 - **Step 3:** Schema + HNSW; `app/ingestion/sql/001_init.sql` + `002_verify.sql`. vector 0.8.2; `lang_code` enum; RLS on; `updated_at` trigger.
 - **Step 4:** `language.py` + `pdf_parser.py`. EN LG: 52 pages / 2 empty. JP Hitachi: 36/0 (catalog “maybe scanned” was wrong — born-digital). Panasonic: 63/0. Forced `min_chars=999999` → 52/52.
-- **Resume next:** Step 5 — page-aware chunking + JP separators.
+- **Step 5:** `chunking.py` — recursive separators + `_chunkify_segments` overlap; per-page only. EN LG 263 chunks / 2 empty pages; JP Panasonic 547 / 0 empty.
+- **Resume next:** Step 6 — embed (bge-m3) + store upsert + pipeline.
 - **Git:** no commit this session unless asked.
 
 ### 2026-07-20 — Steps 1–2
